@@ -1,0 +1,4 @@
+!.env.example
+!.ddunlimited.db-shm
+!.ddunlimited.db-wal
+!.ddunlimited.db

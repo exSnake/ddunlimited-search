@@ -1,0 +1,48 @@
+# DDUnlimited Pages to Scrape
+# Format: Section Name | URL | Page Number (optional, default 1)
+#
+# Example:
+# Serie TV ITA | https://ddunlimited.net/viewtopic.php?t=123456 | 1
+# Film ITA | https://ddunlimited.net/viewtopic.php?t=234567 | 1
+# Anime | https://ddunlimited.net/viewtopic.php?t=345678 | 1
+#
+# Add your pages below:
+
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941487 | 0
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941486 | 1
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941485 | 2
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941484 | 3
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941483 | 4
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941482 | 5
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941481 | 6
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941480 | 7
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941479 | 8
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941478 | 9
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941477 | 10
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941476 | 11
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941475 | 12
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941474 | 13
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941473 | 14
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941472 | 15
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941471 | 16
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941470 | 17
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941469 | 18
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941468 | 19
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941467 | 20
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941466 | 21
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941465 | 22
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941464 | 23
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941463 | 24
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941462 | 25
+Movie | https://ddunlimited.net/viewtopic.php?f=1988&t=3941461 | 26
+Series | https://ddunlimited.net/viewtopic.php?t=61463 | 1
+Series | https://ddunlimited.net/viewtopic.php?f=110&t=61463&start=10 | 2
+Series | https://ddunlimited.net/viewtopic.php?f=110&t=61463&start=20 | 3
+AnimeHD | https://ddunlimited.net/viewtopic.php?t=3747331 | 1
+AnimeSD | https://ddunlimited.net/viewtopic.php?t=3747331 | 1
+Animazione4K | https://ddunlimited.net/viewtopic.php?t=3861121 | 1
+AnimazioneHD | https://ddunlimited.net/viewtopic.php?t=3747498 | 1
+AnimazioneSD | https://ddunlimited.net/viewtopic.php?t=3747505 | 1
+AnimazioneINT | https://ddunlimited.net/viewtopic.php?t=3747330 | 1
+AnimazioneDVD | https://ddunlimited.net/viewtopic.php?t=3754398 | 1
+Documentari | https://ddunlimited.net/viewtopic.php?t=3757469 | 1

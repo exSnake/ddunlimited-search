@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search</h1>
+            <p class="stats">{{ stats.total_titles }} titoli in {{ stats.total_sections }} sezioni</p>
+            <p id="last-import-info" class="stats" style="font-size: 0.8rem; margin-top: 5px;"></p>
+        </header>
+
+        <main>
+            <form id="search-form" class="search-form">
+                <div class="search-row">
+                    <input
+                        type="text"
+                        id="query"
+                        name="q"
+                        placeholder="Cerca titolo..."
+                        autocomplete="off"
+                        autofocus
+                    >
+                    <select id="search-type" name="search_type">
+                        <option value="contains">Contiene</option>
+                        <option value="starts_with">Inizia con</option>
+                        <option value="ends_with">Finisce con</option>
+                        <option value="all_words">Contiene tutte le parole</option>
+                    </select>
+                    <select id="section" name="section">
+                        <option value="">Tutte le sezioni</option>
+                        {% for section in sections %}
+                        <option value="{{ section }}">{{ section }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">Cerca</button>
+                </div>
+            </form>
+
+            <div id="results-info" class="results-info"></div>
+
+            <div id="results" class="results"></div>
+
+            <div id="pagination" class="pagination"></div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+
+    <script>
+        const searchForm = document.getElementById('search-form');
+        const queryInput = document.getElementById('query');
+        const searchTypeSelect = document.getElementById('search-type');
+        const sectionSelect = document.getElementById('section');
+        const resultsDiv = document.getElementById('results');
+        const resultsInfoDiv = document.getElementById('results-info');
+        const paginationDiv = document.getElementById('pagination');
+
+        let currentPage = 1;
+        let searchTimeout = null;
+
+        // Debounced search on input
+        queryInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (queryInput.value.length >= 2) {
+                    currentPage = 1;
+                    performSearch();
+                } else {
+                    clearResults();
+                }
+            }, 300);
+        });
+
+        // Search on section or search type change
+        sectionSelect.addEventListener('change', () => {
+            if (queryInput.value.length >= 2) {
+                currentPage = 1;
+                performSearch();
+            }
+        });
+
+        searchTypeSelect.addEventListener('change', () => {
+            if (queryInput.value.length >= 2) {
+                currentPage = 1;
+                performSearch();
+            }
+        });
+
+        // Form submit
+        searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (queryInput.value.length >= 2) {
+                currentPage = 1;
+                performSearch();
+            }
+        });
+
+        function clearResults() {
+            resultsDiv.innerHTML = '';
+            resultsInfoDiv.innerHTML = '';
+            paginationDiv.innerHTML = '';
+        }
+
+        async function performSearch() {
+            const query = queryInput.value.trim();
+            const section = sectionSelect.value;
+            const searchType = searchTypeSelect.value;
+
+            if (query.length < 2) {
+                clearResults();
+                return;
+            }
+
+            const params = new URLSearchParams({
+                q: query,
+                page: currentPage,
+                search_type: searchType
+            });
+
+            if (section) {
+                params.set('section', section);
+            }
+
+            try {
+                const response = await fetch(`/api/search?${params}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    resultsInfoDiv.innerHTML = `<p class="error">${data.error}</p>`;
+                    return;
+                }
+
+                renderResults(data);
+            } catch (error) {
+                resultsInfoDiv.innerHTML = `<p class="error">Errore di connessione</p>`;
+            }
+        }
+
+        function renderResults(data) {
+            const { results, pagination } = data;
+
+            // Results info
+            if (pagination.total === 0) {
+                resultsInfoDiv.innerHTML = '<p>Nessun risultato trovato</p>';
+                resultsDiv.innerHTML = '';
+                paginationDiv.innerHTML = '';
+                return;
+            }
+
+            const start = (pagination.page - 1) * pagination.per_page + 1;
+            const end = Math.min(start + results.length - 1, pagination.total);
+            resultsInfoDiv.innerHTML = `<p>Risultati ${start}-${end} di ${pagination.total}</p>`;
+
+            // Results list
+            let html = '<ul class="results-list">';
+            for (const item of results) {
+                const quality = item.quality ? `<span class="quality">${item.quality}</span>` : '';
+                const metadata = item.metadata ? `<span class="metadata">${item.metadata}</span>` : '';
+                const section = item.section ? `<span class="section">${item.section}</span>` : '';
+
+                html += `
+                    <li class="result-item">
+                        <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
+                        <div class="item-meta">
+                            ${section}
+                            ${quality}
+                            ${metadata}
+                        </div>
+                    </li>
+                `;
+            }
+            html += '</ul>';
+            resultsDiv.innerHTML = html;
+
+            // Pagination
+            if (pagination.total_pages > 1) {
+                let paginationHtml = '<div class="pagination-buttons">';
+
+                if (pagination.has_prev) {
+                    paginationHtml += `<button onclick="goToPage(${pagination.page - 1})">Precedente</button>`;
+                }
+
+                paginationHtml += `<span class="page-info">Pagina ${pagination.page} di ${pagination.total_pages}</span>`;
+
+                if (pagination.has_next) {
+                    paginationHtml += `<button onclick="goToPage(${pagination.page + 1})">Successiva</button>`;
+                }
+
+                paginationHtml += '</div>';
+                paginationDiv.innerHTML = paginationHtml;
+            } else {
+                paginationDiv.innerHTML = '';
+            }
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            performSearch();
+            window.scrollTo(0, 0);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load last import info
+        async function loadLastImportInfo() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                const lastImportInfo = document.getElementById('last-import-info');
+                
+                if (data.last_import && data.last_import.completed_at) {
+                    const completedAt = new Date(data.last_import.completed_at);
+                    const now = new Date();
+                    const diffMs = now - completedAt;
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    
+                    let timeAgo = '';
+                    if (diffDays > 0) {
+                        timeAgo = `${diffDays} giorno${diffDays > 1 ? 'i' : ''} fa`;
+                    } else if (diffHours > 0) {
+                        timeAgo = `${diffHours} ora${diffHours > 1 ? 'e' : ''} fa`;
+                    } else {
+                        timeAgo = 'poco fa';
+                    }
+                    
+                    const status = data.last_import.status === 'completed' ? '✓' : '⚠';
+                    lastImportInfo.textContent = `${status} Ultima importazione: ${timeAgo} (${completedAt.toLocaleString('it-IT')})`;
+                    lastImportInfo.style.color = data.last_import.status === 'completed' ? '#27ae60' : '#e74c3c';
+                } else {
+                    lastImportInfo.textContent = 'Nessuna importazione completata';
+                    lastImportInfo.style.color = '#888';
+                }
+            } catch (error) {
+                console.error('Error loading last import info:', error);
+            }
+        }
+
+        // Load last import info on page load
+        loadLastImportInfo();
+        // Refresh every 5 minutes
+        setInterval(loadLastImportInfo, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
