@@ -39,6 +39,24 @@ header h1 {
     font-size: 0.9rem;
 }
 
+/* Navigation */
+nav {
+    margin-top: 15px;
+}
+
+nav a {
+    color: #3498db;
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+nav a:hover {
+    background-color: #16213e;
+    text-decoration: underline;
+}
+
 /* Search Form */
 .search-form {
     margin-bottom: 30px;
@@ -154,6 +172,21 @@ header h1 {
     color: #fff;
     padding: 2px 8px;
     border-radius: 4px;
+}
+
+.item-meta .director {
+    background-color: #2c3e50;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.item-meta .year {
+    background-color: #27ae60;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
 }
 
 .item-meta .quality {

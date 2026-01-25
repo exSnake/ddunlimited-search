@@ -19,7 +19,7 @@ services:
       - PAGES_FILE=${PAGES_FILE:-/app/pages.txt}
     volumes:
       - ./data:/app/data
-      - ./pages.txt:/app/pages.txt:ro
+      - ./pages.txt:/app/pages.txt
       - ./logs:/app/logs
     restart: unless-stopped
 
@@ -41,7 +41,7 @@ services:
       - SCRAPE_MINUTE=${SCRAPE_MINUTE:-0}
     volumes:
       - ./data:/app/data
-      - ./pages.txt:/app/pages.txt:ro
+      - ./pages.txt:/app/pages.txt
       - ./logs:/app/logs
     restart: unless-stopped
     command: ["python", "src/scheduler.py"]

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sezioni - DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .sections-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .sections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .section-card {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+        .section-card:hover {
+            background: #1a2744;
+        }
+        .section-card h3 {
+            margin: 0 0 10px 0;
+            color: #3498db;
+        }
+        .section-card a {
+            color: #3498db;
+            text-decoration: none;
+            display: block;
+        }
+        .section-card a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search - Sezioni</h1>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="sections-container">
+                <h2>Seleziona una sezione</h2>
+                
+                <div style="margin-bottom: 30px; padding: 15px; background: #2c3e50; border-radius: 8px; border: 1px solid #333;">
+                    <a href="/sections/missing-data" style="color: #e74c3c; text-decoration: none; font-weight: bold; font-size: 1.1rem;">
+                        ⚠️ Titoli con dati mancanti (regista o anno null)
+                    </a>
+                    <p style="color: #888; margin-top: 5px; font-size: 0.9rem;">
+                        Visualizza i titoli dove regista o anno non sono stati estratti correttamente
+                    </p>
+                </div>
+                
+                <div class="sections-grid">
+                    {% for section in sections %}
+                    <div class="section-card">
+                        <a href="/sections/{{ section }}">
+                            <h3>{{ section }}</h3>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+</body>
+</html>

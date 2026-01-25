@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dati Mancanti - DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .missing-data-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .warning-header {
+            background: #3a1e1e;
+            border: 2px solid #e74c3c;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .warning-header h2 {
+            margin-top: 0;
+            color: #e74c3c;
+        }
+        .warning-header p {
+            color: #eee;
+            margin: 5px 0;
+        }
+        .filters {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .filters h3 {
+            margin-top: 0;
+            color: #fff;
+        }
+        .filter-group {
+            margin-bottom: 15px;
+        }
+        .filter-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #eee;
+            font-weight: bold;
+        }
+        .filter-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .filter-btn {
+            padding: 6px 12px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #eee;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        .filter-btn:hover {
+            background: #0f4c75;
+            border-color: #0f4c75;
+        }
+        .filter-btn.active {
+            background: #0f4c75;
+            border-color: #3498db;
+            color: #fff;
+        }
+        .filter-btn.clear {
+            background: #2c3e50;
+        }
+        .filter-btn.clear:hover {
+            background: #34495e;
+        }
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .results-info {
+            color: #888;
+        }
+        .result-item {
+            padding: 15px;
+            background-color: #16213e;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: background-color 0.2s;
+            border-left: 4px solid #e74c3c;
+        }
+        .result-item:hover {
+            background-color: #1a2744;
+        }
+        .result-item .title {
+            display: block;
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+        .result-item .title:hover {
+            text-decoration: underline;
+        }
+        .item-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 0.85rem;
+            margin-top: 8px;
+        }
+        .item-meta .section {
+            background-color: #2c3e50;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .item-meta .director {
+            background-color: #2c3e50;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .item-meta .year {
+            background-color: #27ae60;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .item-meta .quality {
+            background-color: #27ae60;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .item-meta .metadata {
+            color: #888;
+            font-size: 0.8rem;
+        }
+        .missing-badge {
+            background-color: #e74c3c;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .pagination {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+        .pagination-buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+        .pagination-buttons button {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border: none;
+            border-radius: 6px;
+            background-color: #0f4c75;
+            color: #fff;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .pagination-buttons button:hover {
+            background-color: #1a6da3;
+        }
+        .pagination-buttons button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .page-info {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search - Dati Mancanti</h1>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="missing-data-container">
+                <div class="warning-header">
+                    <h2>⚠️ Titoli con Dati Mancanti</h2>
+                    <p>Questa pagina mostra i titoli dove <strong>regista</strong> o <strong>anno</strong> non sono stati estratti correttamente.</p>
+                    <p>Usa questa pagina per verificare e correggere eventuali errori nell'estrazione dei dati.</p>
+                </div>
+
+                <div class="filters">
+                    <h3>Filtri</h3>
+                    
+                    <div class="filter-group">
+                        <label>Sezione:</label>
+                        <div class="filter-buttons" id="section-filters">
+                            <button class="filter-btn clear" onclick="clearSectionFilter()">Tutte</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-header">
+                    <div class="results-info" id="results-info">Caricamento...</div>
+                </div>
+
+                <div id="results" class="results"></div>
+
+                <div id="pagination" class="pagination"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+
+    <script>
+        const sections = {{ sections | tojson }};
+        let currentPage = 1;
+        let currentSection = null;
+
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            renderSectionFilters();
+            loadData();
+        });
+
+        function renderSectionFilters() {
+            const sectionContainer = document.getElementById('section-filters');
+            sectionContainer.innerHTML = '<button class="filter-btn clear" onclick="clearSectionFilter()">Tutte</button>';
+            
+            sections.forEach(section => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn';
+                if (currentSection === section) {
+                    btn.classList.add('active');
+                }
+                btn.textContent = section;
+                btn.onclick = () => setSectionFilter(section);
+                sectionContainer.appendChild(btn);
+            });
+        }
+
+        function setSectionFilter(section) {
+            currentSection = section;
+            currentPage = 1;
+            loadData();
+        }
+
+        function clearSectionFilter() {
+            currentSection = null;
+            currentPage = 1;
+            loadData();
+        }
+
+        function loadData() {
+            const params = new URLSearchParams({
+                page: currentPage,
+                per_page: 50
+            });
+            
+            if (currentSection) {
+                params.set('section', currentSection);
+            }
+
+            fetch(`/api/missing-data?${params}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('results').innerHTML = `<p class="error">${data.error}</p>`;
+                        return;
+                    }
+
+                    renderResults(data);
+                })
+                .catch(error => {
+                    document.getElementById('results').innerHTML = `<p class="error">Errore di connessione</p>`;
+                });
+        }
+
+        function renderResults(data) {
+            const { results, pagination } = data;
+
+            // Results info
+            if (pagination.total === 0) {
+                document.getElementById('results-info').textContent = 'Nessun risultato trovato';
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            const start = (pagination.page - 1) * pagination.per_page + 1;
+            const end = Math.min(start + results.length - 1, pagination.total);
+            document.getElementById('results-info').textContent = 
+                `Risultati ${start}-${end} di ${pagination.total}`;
+
+            // Results list
+            let html = '';
+            for (const item of results) {
+                const missing = [];
+                if (!item.director) missing.push('Regista');
+                if (!item.year) missing.push('Anno');
+                
+                const missingBadge = missing.length > 0 
+                    ? `<span class="missing-badge">Manca: ${missing.join(', ')}</span>` 
+                    : '';
+                
+                const director = item.director ? `<span class="director">${escapeHtml(item.director)}</span>` : '';
+                const year = item.year ? `<span class="year">${item.year}</span>` : '';
+                const quality = item.quality ? `<span class="quality">${item.quality}</span>` : '';
+                const metadata = item.metadata ? `<span class="metadata">${item.metadata}</span>` : '';
+                const section = item.section ? `<span class="section">${item.section}</span>` : '';
+
+                html += `
+                    <div class="result-item">
+                        <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
+                        <div class="item-meta">
+                            ${section}
+                            ${director}
+                            ${year}
+                            ${quality}
+                            ${metadata}
+                            ${missingBadge}
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('results').innerHTML = html;
+
+            // Pagination
+            if (pagination.total_pages > 1) {
+                let paginationHtml = '<div class="pagination-buttons">';
+
+                if (pagination.has_prev) {
+                    paginationHtml += `<button onclick="goToPage(${pagination.page - 1})">Precedente</button>`;
+                }
+
+                paginationHtml += `<span class="page-info">Pagina ${pagination.page} di ${pagination.total_pages}</span>`;
+
+                if (pagination.has_next) {
+                    paginationHtml += `<button onclick="goToPage(${pagination.page + 1})">Successiva</button>`;
+                }
+
+                paginationHtml += '</div>';
+                document.getElementById('pagination').innerHTML = paginationHtml;
+            } else {
+                document.getElementById('pagination').innerHTML = '';
+            }
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadData();
+            window.scrollTo(0, 0);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

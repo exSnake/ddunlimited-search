@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ section }} - DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .section-detail-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .filters {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .filters h3 {
+            margin-top: 0;
+            color: #fff;
+        }
+        .filter-group {
+            margin-bottom: 15px;
+        }
+        .filter-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #eee;
+            font-weight: bold;
+        }
+        .filter-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .filter-btn {
+            padding: 6px 12px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #eee;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        .filter-btn:hover {
+            background: #0f4c75;
+            border-color: #0f4c75;
+        }
+        .filter-btn.active {
+            background: #0f4c75;
+            border-color: #3498db;
+            color: #fff;
+        }
+        .filter-btn.clear {
+            background: #2c3e50;
+        }
+        .filter-btn.clear:hover {
+            background: #34495e;
+        }
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .results-info {
+            color: #888;
+        }
+        .result-item {
+            padding: 15px;
+            background-color: #16213e;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: background-color 0.2s;
+        }
+        .result-item:hover {
+            background-color: #1a2744;
+        }
+        .result-item .title {
+            display: block;
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+        .result-item .title:hover {
+            text-decoration: underline;
+        }
+        .item-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+        .item-meta .director {
+            background-color: #2c3e50;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .item-meta .year {
+            background-color: #27ae60;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .item-meta .quality {
+            background-color: #27ae60;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .item-meta .metadata {
+            color: #888;
+            font-size: 0.8rem;
+        }
+        .pagination {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+        .pagination-buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+        .pagination-buttons button {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border: none;
+            border-radius: 6px;
+            background-color: #0f4c75;
+            color: #fff;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .pagination-buttons button:hover {
+            background-color: #1a6da3;
+        }
+        .pagination-buttons button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .page-info {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search - {{ section }}</h1>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="section-detail-container">
+                <div class="filters">
+                    <h3>Filtri</h3>
+                    
+                    <div class="filter-group">
+                        <label>Anno:</label>
+                        <div class="filter-buttons" id="year-filters">
+                            <button class="filter-btn clear" onclick="clearYearFilter()">Tutti</button>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Lettera iniziale:</label>
+                        <div class="filter-buttons" id="letter-filters">
+                            <button class="filter-btn clear" onclick="clearLetterFilter()">Tutte</button>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Risoluzione:</label>
+                        <div class="filter-buttons" id="quality-filters">
+                            <button class="filter-btn clear" onclick="clearQualityFilter()">Tutte</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-header">
+                    <div class="results-info" id="results-info">Caricamento...</div>
+                </div>
+
+                <div id="results" class="results"></div>
+
+                <div id="pagination" class="pagination"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+
+    <script>
+        const section = '{{ section }}';
+        let currentPage = 1;
+        let currentYear = null;
+        let currentLetter = null;
+        let currentQuality = null;
+        let availableYears = [];
+        let availableLetters = [];
+        let availableQualities = [];
+
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            loadData();
+        });
+
+        function loadData() {
+            const params = new URLSearchParams({
+                page: currentPage,
+                per_page: 50
+            });
+            
+            if (currentYear) {
+                params.set('year', currentYear);
+            }
+            if (currentLetter) {
+                params.set('first_letter', currentLetter);
+            }
+            if (currentQuality) {
+                params.set('quality', currentQuality);
+            }
+
+            fetch(`/api/sections/${encodeURIComponent(section)}?${params}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('results').innerHTML = `<p class="error">${data.error}</p>`;
+                        return;
+                    }
+
+                    availableYears = data.filters.available_years || [];
+                    availableLetters = data.filters.available_letters || [];
+                    availableQualities = data.filters.available_qualities || [];
+                    
+                    renderFilters();
+                    renderResults(data);
+                })
+                .catch(error => {
+                    document.getElementById('results').innerHTML = `<p class="error">Errore di connessione</p>`;
+                });
+        }
+
+        function renderFilters() {
+            // Render year filters
+            const yearContainer = document.getElementById('year-filters');
+            yearContainer.innerHTML = '<button class="filter-btn clear" onclick="clearYearFilter()">Tutti</button>';
+            
+            availableYears.forEach(year => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn';
+                if (currentYear === year) {
+                    btn.classList.add('active');
+                }
+                btn.textContent = year;
+                btn.onclick = () => setYearFilter(year);
+                yearContainer.appendChild(btn);
+            });
+
+            // Render letter filters
+            const letterContainer = document.getElementById('letter-filters');
+            letterContainer.innerHTML = '<button class="filter-btn clear" onclick="clearLetterFilter()">Tutte</button>';
+            
+            availableLetters.forEach(letter => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn';
+                if (currentLetter === letter) {
+                    btn.classList.add('active');
+                }
+                btn.textContent = letter;
+                btn.onclick = () => setLetterFilter(letter);
+                letterContainer.appendChild(btn);
+            });
+
+            // Render quality filters
+            const qualityContainer = document.getElementById('quality-filters');
+            qualityContainer.innerHTML = '<button class="filter-btn clear" onclick="clearQualityFilter()">Tutte</button>';
+            
+            availableQualities.forEach(quality => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn';
+                if (currentQuality === quality) {
+                    btn.classList.add('active');
+                }
+                btn.textContent = quality;
+                btn.onclick = () => setQualityFilter(quality);
+                qualityContainer.appendChild(btn);
+            });
+        }
+
+        function setYearFilter(year) {
+            currentYear = year;
+            currentPage = 1;
+            loadData();
+        }
+
+        function clearYearFilter() {
+            currentYear = null;
+            currentPage = 1;
+            loadData();
+        }
+
+        function setLetterFilter(letter) {
+            currentLetter = letter;
+            currentPage = 1;
+            loadData();
+        }
+
+        function clearLetterFilter() {
+            currentLetter = null;
+            currentPage = 1;
+            loadData();
+        }
+
+        function setQualityFilter(quality) {
+            currentQuality = quality;
+            currentPage = 1;
+            loadData();
+        }
+
+        function clearQualityFilter() {
+            currentQuality = null;
+            currentPage = 1;
+            loadData();
+        }
+
+        function renderResults(data) {
+            const { results, pagination } = data;
+
+            // Results info
+            if (pagination.total === 0) {
+                document.getElementById('results-info').textContent = 'Nessun risultato trovato';
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            const start = (pagination.page - 1) * pagination.per_page + 1;
+            const end = Math.min(start + results.length - 1, pagination.total);
+            document.getElementById('results-info').textContent = 
+                `Risultati ${start}-${end} di ${pagination.total}`;
+
+            // Results list
+            let html = '';
+            for (const item of results) {
+                const director = item.director ? `<span class="director">${escapeHtml(item.director)}</span>` : '';
+                const year = item.year ? `<span class="year">${item.year}</span>` : '';
+                const quality = item.quality ? `<span class="quality">${item.quality}</span>` : '';
+                const metadata = item.metadata ? `<span class="metadata">${item.metadata}</span>` : '';
+
+                html += `
+                    <div class="result-item">
+                        <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
+                        <div class="item-meta">
+                            ${director}
+                            ${year}
+                            ${quality}
+                            ${metadata}
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('results').innerHTML = html;
+
+            // Pagination
+            if (pagination.total_pages > 1) {
+                let paginationHtml = '<div class="pagination-buttons">';
+
+                if (pagination.has_prev) {
+                    paginationHtml += `<button onclick="goToPage(${pagination.page - 1})">Precedente</button>`;
+                }
+
+                paginationHtml += `<span class="page-info">Pagina ${pagination.page} di ${pagination.total_pages}</span>`;
+
+                if (pagination.has_next) {
+                    paginationHtml += `<button onclick="goToPage(${pagination.page + 1})">Successiva</button>`;
+                }
+
+                paginationHtml += '</div>';
+                document.getElementById('pagination').innerHTML = paginationHtml;
+            } else {
+                document.getElementById('pagination').innerHTML = '';
+            }
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadData();
+            window.scrollTo(0, 0);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

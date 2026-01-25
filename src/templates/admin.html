@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amministrazione - DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .admin-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .admin-section {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .admin-section h2 {
+            margin-top: 0;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+            color: #fff;
+        }
+        .admin-section p {
+            color: #eee;
+        }
+        .admin-section code {
+            background: #1a1a2e;
+            color: #3498db;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #eee;
+        }
+        .form-group input[type="text"],
+        .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #333;
+            border-radius: 4px;
+            background-color: #1a1a2e;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .form-group input[type="text"]:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #0f4c75;
+        }
+        .form-group textarea {
+            min-height: 300px;
+            resize: vertical;
+        }
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #888;
+            font-size: 12px;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #45a049;
+        }
+        .btn-secondary {
+            background: #0f4c75;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #1a6da3;
+        }
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #da190b;
+        }
+        .btn:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+        .status-message {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+        .status-message.success {
+            background: #1e3a2e;
+            color: #4CAF50;
+            border: 1px solid #4CAF50;
+        }
+        .status-message.error {
+            background: #3a1e1e;
+            color: #f44336;
+            border: 1px solid #f44336;
+        }
+        .status-message.info {
+            background: #1e2a3a;
+            color: #3498db;
+            border: 1px solid #3498db;
+        }
+        .import-status {
+            background: #3a2e1e;
+            border: 1px solid #ffc107;
+            color: #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            display: none;
+        }
+        .import-status.running {
+            display: block;
+            background: #1e2a3a;
+            border-color: #3498db;
+            color: #3498db;
+        }
+        .import-status.completed {
+            display: block;
+            background: #1e3a2e;
+            border-color: #4CAF50;
+            color: #4CAF50;
+        }
+        .import-status.error {
+            display: block;
+            background: #3a1e1e;
+            border-color: #f44336;
+            color: #f44336;
+        }
+        .import-status.info {
+            display: block;
+            background: #1e2a3a;
+            border-color: #3498db;
+            color: #3498db;
+        }
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search - Amministrazione</h1>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="admin-container">
+                <!-- Pages.txt Editor Section -->
+                <div class="admin-section">
+                    <h2>Gestione pages.txt</h2>
+                    <p>Modifica il file pages.txt che contiene l'elenco delle pagine da importare.</p>
+                    <p><strong>Formato:</strong> <code>Sezione | URL | Numero Pagina</code></p>
+                    
+                    <div class="form-group">
+                        <label for="pages-content">Contenuto pages.txt:</label>
+                        <textarea id="pages-content" placeholder="Sezione | URL | Pagina"></textarea>
+                        <small>Una riga per pagina. Le righe che iniziano con # sono commenti.</small>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="savePages()">Salva pages.txt</button>
+                        <button class="btn btn-secondary" onclick="loadPages()">Ricarica</button>
+                    </div>
+
+                    <div id="pages-status" class="status-message"></div>
+                </div>
+
+                <!-- Manual Import Section -->
+                <div class="admin-section">
+                    <h2>Importazione Manuale</h2>
+                    <p>Avvia manualmente l'importazione di una singola pagina o di tutte le pagine in pages.txt.</p>
+
+                    <div class="form-group">
+                        <label for="import-url">URL della pagina:</label>
+                        <input type="text" id="import-url" placeholder="https://ddunlimited.net/viewtopic.php?f=123&t=456">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="import-section">Nome sezione:</label>
+                        <input type="text" id="import-section" placeholder="Movie">
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="importSingle()" id="btn-import-single">
+                            Importa Singola Pagina
+                        </button>
+                        <button class="btn btn-secondary" onclick="importAll()" id="btn-import-all">
+                            Importa Tutte le Pagine
+                        </button>
+                    </div>
+
+                    <div id="import-status" class="import-status"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+
+    <script>
+        // Load pages.txt on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            loadPages();
+            checkImportStatus();
+            // Check import status every 1 second for more responsive updates
+            setInterval(checkImportStatus, 1000);
+        });
+
+        function loadPages() {
+            fetch('/api/pages')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showStatus('pages-status', 'error', `Errore: ${data.error}`);
+                        return;
+                    }
+                    document.getElementById('pages-content').value = data.content || '';
+                    showStatus('pages-status', 'success', 'File caricato con successo');
+                    setTimeout(() => {
+                        document.getElementById('pages-status').style.display = 'none';
+                    }, 3000);
+                })
+                .catch(error => {
+                    showStatus('pages-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function savePages() {
+            const content = document.getElementById('pages-content').value;
+            
+            fetch('/api/pages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: content })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showStatus('pages-status', 'error', `Errore: ${data.error}`);
+                    } else {
+                        showStatus('pages-status', 'success', data.message || 'File salvato con successo!');
+                    }
+                })
+                .catch(error => {
+                    showStatus('pages-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function importSingle() {
+            const url = document.getElementById('import-url').value.trim();
+            const section = document.getElementById('import-section').value.trim();
+
+            if (!url || !section) {
+                showImportStatus('error', 'Inserisci URL e sezione');
+                return;
+            }
+
+            const btn = document.getElementById('btn-import-single');
+            btn.disabled = true;
+            btn.textContent = 'Importazione in corso...';
+
+            fetch('/api/import/single', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url: url, section: section })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showImportStatus('error', data.error);
+                        btn.disabled = false;
+                        btn.textContent = 'Importa Singola Pagina';
+                    } else {
+                        showImportStatus('running', 'Importazione avviata...');
+                        checkImportStatus();
+                    }
+                })
+                .catch(error => {
+                    showImportStatus('error', `Errore: ${error.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Importa Singola Pagina';
+                });
+        }
+
+        function importAll() {
+            const btn = document.getElementById('btn-import-all');
+            btn.disabled = true;
+            btn.textContent = 'Avvio importazione...';
+
+            fetch('/api/import/all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showImportStatus('error', data.error);
+                        btn.disabled = false;
+                        btn.textContent = 'Importa Tutte le Pagine';
+                    } else {
+                        showImportStatus('running', 'Importazione completa avviata...');
+                        checkImportStatus();
+                    }
+                })
+                .catch(error => {
+                    showImportStatus('error', `Errore: ${error.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Importa Tutte le Pagine';
+                });
+        }
+
+        let lastStatusMessage = null;
+        let lastStatusType = null;
+        let statusHideTimeout = null;
+
+        function checkImportStatus() { 
+            fetch('/api/import/status')
+                .then(response => response.json())
+                .then(data => {
+                    const btnSingle = document.getElementById('btn-import-single');
+                    const btnAll = document.getElementById('btn-import-all');
+                    const statusElement = document.getElementById('import-status');
+
+                    if (data.running) {
+                        // Clear any pending hide timeout
+                        if (statusHideTimeout) {
+                            clearTimeout(statusHideTimeout);
+                            statusHideTimeout = null;
+                        }
+                        // Only update if message changed
+                        if (data.message !== lastStatusMessage) {
+                            showImportStatus('running', data.message || 'Importazione in corso...');
+                            lastStatusMessage = data.message;
+                            lastStatusType = 'running';
+                        }
+                        btnSingle.disabled = true;
+                        btnAll.disabled = true;
+                    } else {
+                        // Import finished
+                        btnSingle.disabled = false;
+                        btnAll.disabled = false;
+                        btnSingle.textContent = 'Importa Singola Pagina';
+                        btnAll.textContent = 'Importa Tutte le Pagine';
+                        
+                        if (data.message) {
+                            const msg = data.message.toLowerCase();
+                            let statusType;
+                            if (msg.includes('errore') || msg.includes('error') || msg.includes('fallito')) {
+                                statusType = 'error';
+                            } else if (msg.includes('completato') || msg.includes('completed')) {
+                                statusType = 'completed';
+                            } else {
+                                statusType = 'info';
+                            }
+                            
+                            // Only update if message or type changed
+                            if (data.message !== lastStatusMessage || statusType !== lastStatusType) {
+                                // Clear any pending hide timeout
+                                if (statusHideTimeout) {
+                                    clearTimeout(statusHideTimeout);
+                                    statusHideTimeout = null;
+                                }
+                                showImportStatus(statusType, data.message);
+                                lastStatusMessage = data.message;
+                                lastStatusType = statusType;
+                            }
+                        } else {
+                            // No message, hide status only if it's currently visible
+                            if (statusElement.style.display !== 'none') {
+                                // Only hide if we're not in the middle of showing a completed/error message
+                                if (lastStatusType !== 'completed' && lastStatusType !== 'error') {
+                                    statusElement.style.display = 'none';
+                                    lastStatusMessage = null;
+                                    lastStatusType = null;
+                                }
+                            }
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking import status:', error);
+                });
+        }
+
+        function showStatus(elementId, type, message) {
+            const element = document.getElementById(elementId);
+            element.className = `status-message ${type}`;
+            element.textContent = message;
+            element.style.display = 'block';
+        }
+
+        function showImportStatus(type, message) {
+            const element = document.getElementById('import-status');
+            element.className = `import-status ${type}`;
+            
+            if (type === 'running') {
+                element.innerHTML = `<span class="spinner"></span>${message}`;
+            } else {
+                element.textContent = message;
+            }
+            
+            element.style.display = 'block';
+
+            // Auto-hide completed/error messages after 15 seconds (only if not running)
+            if ((type === 'completed' || type === 'error') && type !== 'running') {
+                // Clear any existing timeout
+                if (statusHideTimeout) {
+                    clearTimeout(statusHideTimeout);
+                }
+                statusHideTimeout = setTimeout(() => {
+                    // Only hide if we're still showing the same message
+                    if (lastStatusMessage === message && lastStatusType === type) {
+                        element.style.display = 'none';
+                        lastStatusMessage = null;
+                        lastStatusType = null;
+                    }
+                    statusHideTimeout = null;
+                }, 15000);
+            }
+        }
+    </script>
+</body>
+</html>

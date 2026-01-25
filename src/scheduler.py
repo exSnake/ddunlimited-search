@@ -116,7 +116,12 @@ def wait_until_scheduled_time():
 
 
 def run_import():
-    """Run the scraper import."""
+    """
+    Run the scraper import.
+    
+    Note: Retry logic (3 attempts per page) is handled automatically
+    by the scraper.scrape_page() method with exponential backoff.
+    """
     logger.info("=" * 60)
     logger.info("Starting scheduled import")
     logger.info("=" * 60)

@@ -12,6 +12,12 @@
             <h1>DDUnlimited Search</h1>
             <p class="stats">{{ stats.total_titles }} titoli in {{ stats.total_sections }} sezioni</p>
             <p id="last-import-info" class="stats" style="font-size: 0.8rem; margin-top: 5px;"></p>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
         </header>
 
         <main>
@@ -23,7 +29,13 @@
                         name="q"
                         placeholder="Cerca titolo..."
                         autocomplete="off"
-                        autofocus
+                    >
+                    <input
+                        type="text"
+                        id="director"
+                        name="director"
+                        placeholder="Cerca regista..."
+                        autocomplete="off"
                     >
                     <select id="search-type" name="search_type">
                         <option value="contains">Contiene</option>
@@ -56,6 +68,7 @@
     <script>
         const searchForm = document.getElementById('search-form');
         const queryInput = document.getElementById('query');
+        const directorInput = document.getElementById('director');
         const searchTypeSelect = document.getElementById('search-type');
         const sectionSelect = document.getElementById('section');
         const resultsDiv = document.getElementById('results');
@@ -65,11 +78,31 @@
         let currentPage = 1;
         let searchTimeout = null;
 
+        // Check if we have enough input to search
+        function hasSearchCriteria() {
+            const query = queryInput.value.trim();
+            const director = directorInput.value.trim();
+            return query.length >= 2 || director.length >= 2;
+        }
+
         // Debounced search on input
         queryInput.addEventListener('input', () => {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => {
-                if (queryInput.value.length >= 2) {
+                if (hasSearchCriteria()) {
+                    currentPage = 1;
+                    performSearch();
+                } else {
+                    clearResults();
+                }
+            }, 300);
+        });
+
+        // Debounced search on director input
+        directorInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (hasSearchCriteria()) {
                     currentPage = 1;
                     performSearch();
                 } else {
@@ -80,14 +113,14 @@
 
         // Search on section or search type change
         sectionSelect.addEventListener('change', () => {
-            if (queryInput.value.length >= 2) {
+            if (hasSearchCriteria()) {
                 currentPage = 1;
                 performSearch();
             }
         });
 
         searchTypeSelect.addEventListener('change', () => {
-            if (queryInput.value.length >= 2) {
+            if (hasSearchCriteria()) {
                 currentPage = 1;
                 performSearch();
             }
@@ -96,7 +129,7 @@
         // Form submit
         searchForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            if (queryInput.value.length >= 2) {
+            if (hasSearchCriteria()) {
                 currentPage = 1;
                 performSearch();
             }
@@ -110,19 +143,27 @@
 
         async function performSearch() {
             const query = queryInput.value.trim();
+            const director = directorInput.value.trim();
             const section = sectionSelect.value;
             const searchType = searchTypeSelect.value;
 
-            if (query.length < 2) {
+            if (!hasSearchCriteria()) {
                 clearResults();
                 return;
             }
 
             const params = new URLSearchParams({
-                q: query,
                 page: currentPage,
                 search_type: searchType
             });
+
+            if (query) {
+                params.set('q', query);
+            }
+
+            if (director) {
+                params.set('director', director);
+            }
 
             if (section) {
                 params.set('section', section);
@@ -161,6 +202,8 @@
             // Results list
             let html = '<ul class="results-list">';
             for (const item of results) {
+                const director = item.director ? `<span class="director">${escapeHtml(item.director)}</span>` : '';
+                const year = item.year ? `<span class="year">${item.year}</span>` : '';
                 const quality = item.quality ? `<span class="quality">${item.quality}</span>` : '';
                 const metadata = item.metadata ? `<span class="metadata">${item.metadata}</span>` : '';
                 const section = item.section ? `<span class="section">${item.section}</span>` : '';
@@ -170,6 +213,8 @@
                         <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
                         <div class="item-meta">
                             ${section}
+                            ${director}
+                            ${year}
                             ${quality}
                             ${metadata}
                         </div>
@@ -228,9 +273,9 @@
                     
                     let timeAgo = '';
                     if (diffDays > 0) {
-                        timeAgo = `${diffDays} giorno${diffDays > 1 ? 'i' : ''} fa`;
+                        timeAgo = `${diffDays} giorn${diffDays > 1 ? 'i' : 'o'} fa`;
                     } else if (diffHours > 0) {
-                        timeAgo = `${diffHours} ora${diffHours > 1 ? 'e' : ''} fa`;
+                        timeAgo = `${diffHours} or${diffHours > 1 ? 'e' : 'a'} fa`;
                     } else {
                         timeAgo = 'poco fa';
                     }

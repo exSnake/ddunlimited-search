@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs - DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .logs-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .log-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .log-tab {
+            padding: 10px 20px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .log-tab:hover {
+            background: #e0e0e0;
+        }
+        .log-tab.active {
+            background: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+        }
+        .log-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .log-content {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            max-height: 70vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .log-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        .log-content::-webkit-scrollbar-track {
+            background: #2d2d2d;
+        }
+        .log-content::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+        .log-content::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+        .auto-scroll-indicator {
+            position: sticky;
+            top: 0;
+            background: #4CAF50;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .auto-scroll-indicator.disabled {
+            background: #999;
+        }
+        .refresh-status {
+            font-size: 12px;
+            color: #666;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search - Logs</h1>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="logs-container">
+                <div class="logs-header">
+                    <h2>Visualizzazione Log</h2>
+                    <div class="refresh-status" id="refresh-status"></div>
+                </div>
+
+                <div class="log-tabs">
+                    <button class="log-tab active" data-log="scraper" onclick="switchLog('scraper')">
+                        Scraper Log
+                    </button>
+                    <button class="log-tab" data-log="scheduler" onclick="switchLog('scheduler')">
+                        Scheduler Log
+                    </button>
+                    <button class="log-tab" data-log="web" onclick="switchLog('web')">
+                        Web Server Log
+                    </button>
+                </div>
+
+                <div class="log-controls">
+                    <label>
+                        <input type="checkbox" id="auto-scroll" checked>
+                        Auto-scroll
+                    </label>
+                    <label>
+                        <input type="checkbox" id="auto-refresh" checked>
+                        Auto-refresh (5s)
+                    </label>
+                    <button onclick="loadLogs()">Aggiorna</button>
+                    <button onclick="clearLogs()">Pulisci</button>
+                </div>
+
+                <div id="auto-scroll-indicator" class="auto-scroll-indicator">
+                    Auto-scroll attivo
+                </div>
+
+                <div class="log-content" id="log-content">
+                    Caricamento log...
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+
+    <script>
+        let currentLog = 'scraper';
+        let autoRefreshInterval = null;
+        let lastRefreshTime = null;
+
+        function switchLog(logType) {
+            currentLog = logType;
+            
+            // Update tabs
+            document.querySelectorAll('.log-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelector(`.log-tab[data-log="${logType}"]`).classList.add('active');
+            
+            // Load logs
+            loadLogs();
+        }
+
+        function loadLogs() {
+            fetch(`/api/logs?file=${currentLog}&lines=1000`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('log-content').textContent = `Errore: ${data.error}`;
+                        return;
+                    }
+                    
+                    const content = data.content || 'Log vuoto';
+                    const logContent = document.getElementById('log-content');
+                    const wasAtBottom = isScrolledToBottom();
+                    
+                    logContent.textContent = content;
+                    
+                    // Auto-scroll if enabled and was at bottom
+                    if (document.getElementById('auto-scroll').checked && wasAtBottom) {
+                        logContent.scrollTop = logContent.scrollHeight;
+                    }
+                    
+                    lastRefreshTime = new Date();
+                    updateRefreshStatus();
+                })
+                .catch(error => {
+                    document.getElementById('log-content').textContent = `Errore di connessione: ${error.message}`;
+                });
+        }
+
+        function clearLogs() {
+            document.getElementById('log-content').textContent = '';
+        }
+
+        function isScrolledToBottom() {
+            const logContent = document.getElementById('log-content');
+            return logContent.scrollHeight - logContent.scrollTop <= logContent.clientHeight + 10;
+        }
+
+        function updateRefreshStatus() {
+            if (lastRefreshTime) {
+                const statusEl = document.getElementById('refresh-status');
+                const now = new Date();
+                const diff = Math.floor((now - lastRefreshTime) / 1000);
+                statusEl.textContent = `Ultimo aggiornamento: ${diff}s fa`;
+            }
+        }
+
+        // Auto-refresh
+        document.getElementById('auto-refresh').addEventListener('change', function(e) {
+            if (e.target.checked) {
+                autoRefreshInterval = setInterval(loadLogs, 5000);
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+            }
+        });
+
+        // Auto-scroll indicator
+        document.getElementById('auto-scroll').addEventListener('change', function(e) {
+            const indicator = document.getElementById('auto-scroll-indicator');
+            if (e.target.checked) {
+                indicator.textContent = 'Auto-scroll attivo';
+                indicator.classList.remove('disabled');
+            } else {
+                indicator.textContent = 'Auto-scroll disattivato';
+                indicator.classList.add('disabled');
+            }
+        });
+
+        // Initial load
+        loadLogs();
+        
+        // Start auto-refresh if enabled
+        if (document.getElementById('auto-refresh').checked) {
+            autoRefreshInterval = setInterval(loadLogs, 5000);
+        }
+
+        // Update refresh status every second
+        setInterval(updateRefreshStatus, 1000);
+    </script>
+</body>
+</html>
