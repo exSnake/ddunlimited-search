@@ -130,7 +130,7 @@ class DDUnlimitedScraper:
             logger.error(f"Failed to fetch {url}: {e}")
             return None
 
-    def scrape_page(self, url: str, section: str, max_retries: int = 3, status_callback=None) -> tuple[int, int, int]:
+    def scrape_page(self, url: str, section: str, max_retries: int = 3, status_callback=None, page_num: int = None, total_pages: int = None) -> tuple[int, int, int]:
         """
         Scrape a single page and save titles to database.
 
@@ -139,16 +139,25 @@ class DDUnlimitedScraper:
             section: The section name
             max_retries: Maximum number of retry attempts (default: 3)
             status_callback: Optional callback function(status_message) to update status
+            page_num: Current page number (optional, for status messages)
+            total_pages: Total number of pages (optional, for status messages)
 
         Returns:
             Tuple of (titles_found, inserted, updated)
         """
-        def update_status(msg):
-            if status_callback:
-                status_callback(msg)
-            logger.info(msg)
+        # Create prefix for status messages if page info is provided
+        page_prefix = ""
+        if page_num is not None and total_pages is not None:
+            page_prefix = f"[{page_num}/{total_pages}] "
         
-        logger.info(f"Scraping page: {section} - {url} (max retries: {max_retries})")
+        def update_status(msg):
+            # Add page prefix to all status messages
+            prefixed_msg = page_prefix + msg
+            if status_callback:
+                status_callback(prefixed_msg)
+            logger.info(prefixed_msg)
+        
+        logger.info(f"{page_prefix}Scraping page: {section} - {url} (max retries: {max_retries})")
         for attempt in range(1, max_retries + 1):
             if attempt > 1:
                 update_status(f"Tentativo {attempt}/{max_retries}...")
@@ -158,7 +167,7 @@ class DDUnlimitedScraper:
                 update_status("Parsing della pagina in corso...")
                 titles = parser.parse_page(html, section)
                 update_status(f"Trovati {len(titles)} titoli, inserimento in corso...")
-                logger.info(f"Found {len(titles)} titles on page")
+                logger.info(f"{page_prefix}Found {len(titles)} titles on page")
 
                 inserted = 0
                 updated = 0
@@ -180,19 +189,19 @@ class DDUnlimitedScraper:
                     if idx % 10 == 0 or idx == total:
                         update_status(f"Inserimento: {idx}/{total} titoli processati ({inserted} nuovi, {updated} aggiornati)...")
 
-                logger.info(f"Inserted {inserted} new titles, updated {updated}")
+                logger.info(f"{page_prefix}Inserted {inserted} new titles, updated {updated}")
                 return (len(titles), inserted, updated)
             else:
                 if attempt < max_retries:
                     # Exponential backoff: 1s, 2s, 4s...
                     wait_time = 2 ** (attempt - 1)
                     update_status(f"Errore nel download (tentativo {attempt}/{max_retries}), nuovo tentativo tra {wait_time}s...")
-                    logger.warning(f"Failed to fetch {url} (attempt {attempt}/{max_retries}). Retrying in {wait_time}s...")
+                    logger.warning(f"{page_prefix}Failed to fetch {url} (attempt {attempt}/{max_retries}). Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     error_msg = f"Errore: impossibile scaricare la pagina dopo {max_retries} tentativi"
                     update_status(error_msg)
-                    logger.error(f"Failed to fetch {url} after {max_retries} attempts. Skipping.")
+                    logger.error(f"{page_prefix}Failed to fetch {url} after {max_retries} attempts. Skipping.")
         
         return (0, 0, 0)
 
@@ -301,7 +310,13 @@ class DDUnlimitedScraper:
                 update_status(f"[{i}/{len(pages)}] Importazione: {section}...")
                 logger.info(f"[{i}/{len(pages)}] Scraping: {section} - {url}")
 
-                found, inserted, updated = self.scrape_page(url, section, status_callback=status_callback)
+                found, inserted, updated = self.scrape_page(
+                    url, 
+                    section, 
+                    status_callback=status_callback,
+                    page_num=i,
+                    total_pages=len(pages)
+                )
                 total_titles += found
                 total_inserted += inserted
                 total_updated += updated
