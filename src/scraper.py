@@ -182,9 +182,11 @@ class DDUnlimitedScraper:
                     )
                     if is_new:
                         inserted += 1
+                        logger.debug(f"{page_prefix}[NUOVO] {title_data['title']}")
                     else:
                         updated += 1
-                    
+                        logger.debug(f"{page_prefix}[GIA' PRESENTE] {title_data['title']}")
+
                     # Update status every 10 titles or at the end
                     if idx % 10 == 0 or idx == total:
                         update_status(f"Inserimento: {idx}/{total} titoli processati ({inserted} nuovi, {updated} aggiornati)...")
