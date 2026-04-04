@@ -56,6 +56,119 @@ def extract_metadata(text: str) -> str | None:
     return None
 
 
+LANGUAGE_MAP = {
+    'italiano': 'ITA', 'inglese': 'ENG', 'francese': 'FRA',
+    'tedesco': 'DEU', 'spagnolo': 'SPA', 'portoghese': 'POR',
+    'giapponese': 'JPN', 'coreano': 'KOR', 'cinese': 'CHN',
+    'russo': 'RUS', 'arabo': 'ARA', 'olandese': 'NLD',
+}
+
+
+def extract_quality_from_icons(parent_tag) -> str | None:
+    """Scan all <img> tags in parent for inline quality icons."""
+    if not parent_tag:
+        return None
+    for img in parent_tag.find_all('img'):
+        src = img.get('src', '').lower()
+        if '4k' in src or 'uhd' in src:
+            return '4K'
+        if 'full.hd' in src or 'fullhd' in src:
+            return '1080p'
+        if '.hd.' in src:
+            return '720p'
+    return None
+
+
+def parse_post_detail(html: str) -> dict:
+    """
+    Parse an individual post page and extract rich metadata from h2/h4.
+
+    Returns:
+        Dict with keys: quality, metadata, languages, status
+    """
+    soup = BeautifulSoup(html, 'html.parser')
+    quality = None
+    metadata = None
+    languages = None
+    status = None
+    raw_info = None
+
+    LANG_CODES = {'ITA','ENG','FRA','DEU','SPA','POR','JPN','KOR','CHN','RUS','ARA','NLD','POL','TUR','SWE','NOR','DAN','FIN'}
+    AUDIO_CODECS = {'AC3','DTS','AAC','EAC3','TRUEHD','ATMOS','DD5','FLAC','MP3'}
+
+    # Extract from <h4>: plain text like "WEB, MUX, 720p, X264, AC3 ITA, SUB ITA-ENG, MKV"
+    h4 = soup.find('h4')
+    if h4:
+        h4_text = h4.get_text(strip=True)
+        raw_info = h4_text
+        quality = extract_quality(h4_text)
+
+        # Parse comma-separated tokens preserving codec+lang and sub+lang associations
+        tokens = [t.strip() for t in re.split(r'[,\-–]', h4_text) if t.strip()]
+        structured = []
+        audio_langs = []
+        sub_langs = []
+
+        for token in tokens:
+            parts = token.split()
+            upper_parts = [p.upper() for p in parts]
+
+            if upper_parts and upper_parts[0] in AUDIO_CODECS:
+                codec = upper_parts[0]
+                langs = [p for p in upper_parts[1:] if p in LANG_CODES]
+                audio_langs.extend(langs)
+                structured.append(codec + (' ' + ' '.join(langs) if langs else ''))
+            elif upper_parts and upper_parts[0] == 'SUB':
+                langs = [p for p in upper_parts[1:] if p in LANG_CODES]
+                sub_langs.extend(langs)
+                structured.append('SUB ' + ' '.join(langs) if langs else 'SUB')
+            else:
+                structured.append(token)
+
+        # Store structured metadata with SUBLANG_ prefix for sub languages
+        meta_parts = [s for s in structured if s]
+        if sub_langs:
+            meta_parts = [p for p in meta_parts if not p.upper().startswith('SUB')]
+            meta_parts.append('SUB ' + ' '.join(dict.fromkeys(sub_langs)))
+        if audio_langs:
+            languages = ' | '.join(dict.fromkeys(audio_langs))
+        metadata = ' | '.join(dict.fromkeys(meta_parts)) if meta_parts else extract_metadata(h4_text)
+
+    # Extract from <h2> icons
+    h2 = soup.find('h2')
+    if h2:
+        lang_list = []
+        extra_meta = []
+        for img in h2.find_all('img'):
+            src = img.get('src', '').lower()
+            title_attr = img.get('title', '')
+            alt_attr = img.get('alt', '').lower()
+
+            if 'stv.status.' in src or 'status.' in src:
+                status = title_attr or img.get('alt', '') or None
+            elif any(lang_key in src for lang_key in ['ita.', 'eng.', 'fra.', 'deu.', 'spa.',
+                                                        'por.', 'jpn.', 'kor.', 'chn.', 'rus.']):
+                code = LANGUAGE_MAP.get(alt_attr)
+                if not code and title_attr:
+                    code = LANGUAGE_MAP.get(title_attr.lower())
+                if code:
+                    lang_list.append(code)
+            elif 'source.' in src or 'codec_v.' in src or 'codec_a.' in src or 'cont.' in src:
+                label = title_attr or img.get('alt', '')
+                if label:
+                    extra_meta.append(label)
+
+        if lang_list:
+            languages = ' | '.join(dict.fromkeys(lang_list))
+
+        if extra_meta:
+            existing = metadata or ''
+            combined = (existing + ' | ' + ' | '.join(extra_meta)) if existing else ' | '.join(extra_meta)
+            metadata = ' | '.join(dict.fromkeys(combined.split(' | ')))
+
+    return {'quality': quality, 'metadata': metadata, 'languages': languages, 'status': status, 'raw_info': raw_info}
+
+
 def is_navigation_link(link) -> bool:
     """Check if a link is a navigation letter link (contains only an image)."""
     # Check if link contains only an image with no meaningful text
@@ -179,7 +292,11 @@ def parse_page(html: str, section: str) -> list[dict]:
         # Extract quality and metadata
         quality = extract_quality(full_text)
 
-        # If no quality found in text, try to detect from section context
+        # If no quality found in text, check inline icons in parent
+        if not quality:
+            quality = extract_quality_from_icons(link.parent)
+
+        # If still no quality, try to detect from section context
         if not quality:
             quality = detect_section_quality(link)
 

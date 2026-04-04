@@ -29,3 +29,10 @@ FLASK_DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"
 
 # Pages file
 PAGES_FILE = os.getenv("PAGES_FILE", "pages.txt")
+
+# Logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# Post detail scraping
+SCRAPE_POST_DETAILS = os.getenv("SCRAPE_POST_DETAILS", "true").lower() == "true"
+POST_DETAIL_WORKERS = int(os.getenv("POST_DETAIL_WORKERS", "3"))

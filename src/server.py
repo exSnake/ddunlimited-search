@@ -90,6 +90,7 @@ def api_search():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 50, type=int)
     search_type = request.args.get('search_type', 'contains').strip()
+    include_deleted = request.args.get('include_deleted', 'false').lower() == 'true'
 
     # Validate parameters - at least one of query or director must be provided
     if not query and not director:
@@ -112,7 +113,8 @@ def api_search():
         page=page,
         per_page=per_page,
         search_type=search_type,
-        director=director
+        director=director,
+        include_deleted=include_deleted
     )
 
     # Calculate pagination info
@@ -208,27 +210,33 @@ def api_logs():
     """
     log_file = request.args.get('file', 'scraper').strip()
     lines = request.args.get('lines', 500, type=int)
-    
+    offset = request.args.get('offset', 0, type=int)  # lines to skip from the end
+
     if log_file not in ['scraper', 'scheduler', 'web']:
         return jsonify({'error': 'Invalid log file. Use "scraper", "scheduler", or "web"'}), 400
-    
+
     log_path = f'logs/{log_file}.log'
-    
+
     try:
         if not os.path.exists(log_path):
-            return jsonify({'content': '', 'file': log_file})
-        
+            return jsonify({'content': '', 'file': log_file, 'total_lines': 0})
+
         with open(log_path, 'r', encoding='utf-8') as f:
             all_lines = f.readlines()
-        
-        # Get last N lines
-        content_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+
+        total = len(all_lines)
+        # offset=0 → last N lines; offset=N → skip last N, take previous N
+        end = total - offset if offset < total else 0
+        start = max(0, end - lines)
+        content_lines = all_lines[start:end]
         content = ''.join(content_lines)
-        
+
         return jsonify({
             'content': content,
             'file': log_file,
-            'total_lines': len(all_lines)
+            'total_lines': total,
+            'start_line': start + 1,
+            'end_line': end,
         })
     except Exception as e:
         return jsonify({'error': f'Error reading log file: {str(e)}'}), 500

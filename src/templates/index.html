@@ -51,6 +51,12 @@
                     </select>
                     <button type="submit">Cerca</button>
                 </div>
+                <div class="search-row-extra">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="include-deleted" name="include_deleted">
+                        Mostra eliminati (404)
+                    </label>
+                </div>
             </form>
 
             <div id="results-info" class="results-info"></div>
@@ -71,6 +77,7 @@
         const directorInput = document.getElementById('director');
         const searchTypeSelect = document.getElementById('search-type');
         const sectionSelect = document.getElementById('section');
+        const includeDeletedCheckbox = document.getElementById('include-deleted');
         const resultsDiv = document.getElementById('results');
         const resultsInfoDiv = document.getElementById('results-info');
         const paginationDiv = document.getElementById('pagination');
@@ -109,6 +116,14 @@
                     clearResults();
                 }
             }, 300);
+        });
+
+        // Search on include_deleted change
+        includeDeletedCheckbox.addEventListener('change', () => {
+            if (hasSearchCriteria()) {
+                currentPage = 1;
+                performSearch();
+            }
         });
 
         // Search on section or search type change
@@ -154,7 +169,8 @@
 
             const params = new URLSearchParams({
                 page: currentPage,
-                search_type: searchType
+                search_type: searchType,
+                include_deleted: includeDeletedCheckbox.checked
             });
 
             if (query) {
@@ -205,18 +221,20 @@
                 const director = item.director ? `<span class="director">${escapeHtml(item.director)}</span>` : '';
                 const year = item.year ? `<span class="year">${item.year}</span>` : '';
                 const quality = item.quality ? `<span class="quality">${item.quality}</span>` : '';
-                const metadata = item.metadata ? `<span class="metadata">${item.metadata}</span>` : '';
                 const section = item.section ? `<span class="section">${item.section}</span>` : '';
+                const deleted = item.deleted_at ? `<span class="deleted-badge">Eliminato (404)</span>` : '';
+                const chips = buildChips(item);
 
                 html += `
-                    <li class="result-item">
+                    <li class="result-item${item.deleted_at ? ' result-deleted' : ''}">
                         <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
+                        ${deleted}
                         <div class="item-meta">
                             ${section}
                             ${director}
                             ${year}
                             ${quality}
-                            ${metadata}
+                            ${chips}
                         </div>
                     </li>
                 `;
@@ -249,6 +267,79 @@
             currentPage = page;
             performSearch();
             window.scrollTo(0, 0);
+        }
+
+        const FLAG_MAP = {
+            'ITA': '🇮🇹', 'ENG': '🇬🇧', 'FRA': '🇫🇷', 'DEU': '🇩🇪',
+            'SPA': '🇪🇸', 'POR': '🇵🇹', 'JPN': '🇯🇵', 'KOR': '🇰🇷',
+            'CHN': '🇨🇳', 'RUS': '🇷🇺', 'ARA': '🇸🇦', 'NLD': '🇳🇱',
+            'POL': '🇵🇱', 'TUR': '🇹🇷', 'SWE': '🇸🇪', 'NOR': '🇳🇴',
+            'DAN': '🇩🇰', 'FIN': '🇫🇮',
+        };
+        const AUDIO_CODECS = new Set(['AC3','DTS','AAC','EAC3','TRUEHD','ATMOS','DD5','DD2','FLAC','MP3']);
+        const VIDEO_CODECS = {'X264':'H.264','X265':'H.265','H264':'H.264','H265':'H.265','HEVC':'H.265','AVC':'H.264','XVID':'XviD','DIVX':'DivX'};
+        const LANG_CODES = new Set(Object.keys(FLAG_MAP));
+
+        function buildChips(item) {
+            const rawParts = item.metadata
+                ? item.metadata.split('|').map(p => p.trim()).filter(Boolean)
+                : [];
+
+            // Parse audio langs from "AC3 ITA" style tokens and standalone lang codes
+            const audioLangs = item.languages
+                ? item.languages.split('|').map(p => p.trim().toUpperCase())
+                : [];
+            const subLangs = [];
+            let foundAudioCodec = null;
+            let foundVideoCodec = null;
+
+            const audioPriority = ['ATMOS','TRUEHD','DTS','EAC3','AC3','FLAC','AAC','MP3','DD5'];
+
+            for (const part of rawParts) {
+                const words = part.toUpperCase().split(/\s+/);
+                const first = words[0];
+
+                if (first === 'SUB' || first === 'MULTISUB') {
+                    // "SUB ITA ENG" → sub languages
+                    words.slice(1).filter(w => LANG_CODES.has(w)).forEach(l => subLangs.push(l));
+                } else if (AUDIO_CODECS.has(first)) {
+                    // "AC3 ITA" → codec + audio lang
+                    if (!foundAudioCodec || audioPriority.indexOf(first) < audioPriority.indexOf(foundAudioCodec))
+                        foundAudioCodec = first;
+                    words.slice(1).filter(w => LANG_CODES.has(w)).forEach(l => { if (!audioLangs.includes(l)) audioLangs.push(l); });
+                } else if (VIDEO_CODECS[first]) {
+                    foundVideoCodec = first;
+                } else if (LANG_CODES.has(first) && audioLangs.length === 0) {
+                    // Legacy: standalone ITA/ENG = audio lang
+                    audioLangs.push(first);
+                }
+            }
+
+            // If no structured audio codec yet, fallback scan
+            if (!foundAudioCodec) {
+                foundAudioCodec = audioPriority.find(a => rawParts.some(p => p.toUpperCase().startsWith(a)));
+            }
+            if (!foundVideoCodec) {
+                foundVideoCodec = Object.keys(VIDEO_CODECS).find(v => rawParts.some(p => p.toUpperCase().startsWith(v)));
+            }
+
+            const langFlags = langs => [...new Set(langs)]
+                .map(l => FLAG_MAP[l] ? `${FLAG_MAP[l]}\u00a0${l}` : l).join(' ');
+
+            const langChips = audioLangs.length
+                ? `<span class="lang">🎵 ${langFlags(audioLangs)}</span>` : '';
+
+            const audioLabel = {'TRUEHD':'TrueHD','ATMOS':'Atmos','EAC3':'EAC3'}[foundAudioCodec] || foundAudioCodec;
+            const audioChip = foundAudioCodec ? `<span class="audio-codec">🔊 ${audioLabel}</span>` : '';
+
+            const videoChip = foundVideoCodec ? `<span class="video-codec">🎬 ${VIDEO_CODECS[foundVideoCodec]}</span>` : '';
+
+            const subChip = (subLangs.length || rawParts.some(p => /^MULTISUB$/i.test(p.trim())))
+                ? `<span class="sub">📄 SUB${subLangs.length ? ' ' + langFlags(subLangs) : ''}</span>` : '';
+
+            const statusChip = item.status ? `<span class="status">${escapeHtml(item.status)}</span>` : '';
+
+            return langChips + audioChip + videoChip + subChip + statusChip;
         }
 
         function escapeHtml(text) {

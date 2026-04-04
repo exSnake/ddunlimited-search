@@ -186,23 +186,31 @@ fi
 echo ""
 echo -e "${GREEN}1. Creo/uso il builder multi-arch...${NC}"
 
-# Crea un builder multi-arch se non esiste
+# Crea un builder multi-arch se non esiste o non è running
 BUILDER_NAME="multiarch-builder"
-if ! docker buildx ls | grep -q "$BUILDER_NAME"; then
-    echo "Creo il builder multi-arch..."
-    docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
+BUILDER_STATUS=$(docker buildx ls 2>/dev/null | grep "^$BUILDER_NAME" | awk '{print $4}')
+
+if [ "$BUILDER_STATUS" = "running" ]; then
+    echo "Uso il builder esistente (running)..."
+    docker buildx use "$BUILDER_NAME"
 else
-    echo "Uso il builder esistente..."
-    docker buildx use "$BUILDER_NAME" 2>/dev/null || {
-        echo "Il builder esiste ma non è utilizzabile, lo ricreo..."
+    if docker buildx ls | grep -q "^$BUILDER_NAME"; then
+        echo "Il builder esiste ma non è running ($BUILDER_STATUS), lo ricreo..."
         docker buildx rm "$BUILDER_NAME" 2>/dev/null || true
-        docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
-    }
+    else
+        echo "Creo il builder multi-arch..."
+    fi
+    docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
 fi
 
-# Inizializza il builder
+# Inizializza e verifica il builder
 echo "Inizializzazione builder..."
-docker buildx inspect --bootstrap
+docker buildx inspect --bootstrap || {
+    echo -e "${RED}Errore: impossibile inizializzare il builder. Tentativo di reset...${NC}"
+    docker buildx rm "$BUILDER_NAME" 2>/dev/null || true
+    docker buildx create --name "$BUILDER_NAME" --driver docker-container --use
+    docker buildx inspect --bootstrap
+}
 
 echo ""
 echo -e "${GREEN}2. Buildo e pubblico l'immagine multi-arch...${NC}"

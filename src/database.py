@@ -159,7 +159,19 @@ def init_db():
         if 'title_first_letter' not in columns:
             cursor.execute("ALTER TABLE titles ADD COLUMN title_first_letter TEXT")
             columns_added = True
-        
+        if 'languages' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN languages TEXT")
+            columns_added = True
+        if 'status' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN status TEXT")
+            columns_added = True
+        if 'deleted_at' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN deleted_at TIMESTAMP")
+            columns_added = True
+        if 'raw_info' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN raw_info TEXT")
+            columns_added = True
+
         # Commit column additions before creating indexes
         if columns_added:
             conn.commit()
@@ -185,33 +197,46 @@ def init_db():
         """)
 
 
-def insert_title(title: str, url: str, section: str, metadata: str = None, quality: str = None) -> bool:
+def insert_title(title: str, url: str, section: str, metadata: str = None, quality: str = None,
+                 languages: str = None, status: str = None, raw_info: str = None) -> bool:
     """Insert a title into the database. Returns True if inserted, False if already exists."""
     # Extract director, year, and first letter
     director, year, first_letter = extract_director_and_year(title)
-    
+
     with get_db() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute(
                 """
-                INSERT INTO titles (title, url, section, metadata, quality, director, year, title_first_letter)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO titles (title, url, section, metadata, quality, director, year,
+                                    title_first_letter, languages, status, raw_info)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (title, url, section, metadata, quality, director, year, first_letter)
+                (title, url, section, metadata, quality, director, year, first_letter, languages, status, raw_info)
             )
             return True
         except sqlite3.IntegrityError:
-            # URL already exists, update the record
             cursor.execute(
                 """
-                UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?, 
-                                 director = ?, year = ?, title_first_letter = ?
+                UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
+                                 director = ?, year = ?, title_first_letter = ?,
+                                 languages = ?, status = ?, raw_info = ?
                 WHERE url = ?
                 """,
-                (title, section, metadata, quality, director, year, first_letter, url)
+                (title, section, metadata, quality, director, year, first_letter, languages, status, raw_info, url)
             )
             return False
+
+
+def delete_title(url: str) -> bool:
+    """Soft-delete a title by URL (sets deleted_at). Returns True if found and marked."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE titles SET deleted_at = CURRENT_TIMESTAMP WHERE url = ? AND deleted_at IS NULL",
+            (url,)
+        )
+        return cursor.rowcount > 0
 
 
 def search_titles(
@@ -220,7 +245,8 @@ def search_titles(
     page: int = 1,
     per_page: int = 50,
     search_type: str = "contains",
-    director: Optional[str] = None
+    director: Optional[str] = None,
+    include_deleted: bool = False
 ) -> tuple[list[dict], int]:
     """
     Search titles by query string.
@@ -269,8 +295,9 @@ def search_titles(
                 params.append(f"%{director}%")
         
         # Build base query
+        deleted_filter = "" if include_deleted else "deleted_at IS NULL AND "
         if title_conditions:
-            base_query = "FROM titles WHERE " + " AND ".join(title_conditions)
+            base_query = "FROM titles WHERE " + deleted_filter + " AND ".join(title_conditions)
         else:
             # If no search criteria, return empty results
             base_query = "FROM titles WHERE 1=0"
@@ -288,7 +315,8 @@ def search_titles(
         offset = (page - 1) * per_page
         cursor.execute(
             f"""
-            SELECT id, title, url, section, metadata, quality, director, year, title_first_letter, created_at
+            SELECT id, title, url, section, metadata, quality, director, year, title_first_letter,
+                   created_at, deleted_at
             {base_query}
             ORDER BY title
             LIMIT ? OFFSET ?
@@ -304,7 +332,7 @@ def get_all_sections() -> list[str]:
     """Get all unique sections from the database."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT section FROM titles WHERE section IS NOT NULL ORDER BY section")
+        cursor.execute("SELECT DISTINCT section FROM titles WHERE section IS NOT NULL AND deleted_at IS NULL ORDER BY section")
         return [row[0] for row in cursor.fetchall()]
 
 
@@ -312,9 +340,9 @@ def get_stats() -> dict:
     """Get database statistics."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM titles")
+        cursor.execute("SELECT COUNT(*) FROM titles WHERE deleted_at IS NULL")
         total = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(DISTINCT section) FROM titles")
+        cursor.execute("SELECT COUNT(DISTINCT section) FROM titles WHERE deleted_at IS NULL")
         sections = cursor.fetchone()[0]
         return {"total_titles": total, "total_sections": sections}
 
@@ -448,7 +476,7 @@ def get_section_titles(
         cursor = conn.cursor()
         
         # Build base query
-        base_query = "FROM titles WHERE section = ?"
+        base_query = "FROM titles WHERE deleted_at IS NULL AND section = ?"
         params = [section]
         
         if year:
@@ -483,22 +511,22 @@ def get_section_titles(
         
         # Get available years and letters for this section
         cursor.execute("""
-            SELECT DISTINCT year FROM titles 
-            WHERE section = ? AND year IS NOT NULL 
+            SELECT DISTINCT year FROM titles
+            WHERE deleted_at IS NULL AND section = ? AND year IS NOT NULL
             ORDER BY year DESC
         """, (section,))
         available_years = [row[0] for row in cursor.fetchall()]
-        
+
         cursor.execute("""
-            SELECT DISTINCT UPPER(title_first_letter) as letter FROM titles 
-            WHERE section = ? AND title_first_letter IS NOT NULL 
+            SELECT DISTINCT UPPER(title_first_letter) as letter FROM titles
+            WHERE deleted_at IS NULL AND section = ? AND title_first_letter IS NOT NULL
             ORDER BY letter
         """, (section,))
         available_letters = [row[0] for row in cursor.fetchall()]
-        
+
         cursor.execute("""
-            SELECT DISTINCT quality FROM titles 
-            WHERE section = ? AND quality IS NOT NULL AND quality != ''
+            SELECT DISTINCT quality FROM titles
+            WHERE deleted_at IS NULL AND section = ? AND quality IS NOT NULL AND quality != ''
             ORDER BY quality
         """, (section,))
         available_qualities = [row[0] for row in cursor.fetchall()]
@@ -516,18 +544,18 @@ def get_section_stats(section: str) -> dict:
     """Get statistics for a specific section."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM titles WHERE section = ?", (section,))
+        cursor.execute("SELECT COUNT(*) FROM titles WHERE deleted_at IS NULL AND section = ?", (section,))
         total = cursor.fetchone()[0]
-        
+
         cursor.execute("""
-            SELECT COUNT(DISTINCT year) FROM titles 
-            WHERE section = ? AND year IS NOT NULL
+            SELECT COUNT(DISTINCT year) FROM titles
+            WHERE deleted_at IS NULL AND section = ? AND year IS NOT NULL
         """, (section,))
         years_count = cursor.fetchone()[0]
-        
+
         cursor.execute("""
-            SELECT COUNT(DISTINCT director) FROM titles 
-            WHERE section = ? AND director IS NOT NULL
+            SELECT COUNT(DISTINCT director) FROM titles
+            WHERE deleted_at IS NULL AND section = ? AND director IS NOT NULL
         """, (section,))
         directors_count = cursor.fetchone()[0]
         

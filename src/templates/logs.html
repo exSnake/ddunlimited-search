@@ -131,8 +131,22 @@
                         <input type="checkbox" id="auto-refresh" checked>
                         Auto-refresh (5s)
                     </label>
+                    <label>
+                        Righe:
+                        <select id="lines-select" onchange="resetAndLoad()">
+                            <option value="200">200</option>
+                            <option value="500" selected>500</option>
+                            <option value="1000">1000</option>
+                            <option value="5000">5000</option>
+                        </select>
+                    </label>
                     <button onclick="loadLogs()">Aggiorna</button>
                     <button onclick="clearLogs()">Pulisci</button>
+                </div>
+                <div class="log-nav" id="log-nav" style="display:none; margin-bottom:8px; display:flex; gap:8px; align-items:center;">
+                    <button id="btn-older" onclick="loadOlder()">&#171; Più vecchi</button>
+                    <button id="btn-newer" onclick="loadNewer()">Più recenti &#187;</button>
+                    <span id="log-range" style="font-size:0.85rem; color:#666;"></span>
                 </div>
 
                 <div id="auto-scroll-indicator" class="auto-scroll-indicator">
@@ -154,40 +168,64 @@
         let currentLog = 'scraper';
         let autoRefreshInterval = null;
         let lastRefreshTime = null;
+        let currentOffset = 0;
+        let totalLines = 0;
 
         function switchLog(logType) {
             currentLog = logType;
-            
-            // Update tabs
-            document.querySelectorAll('.log-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
+            document.querySelectorAll('.log-tab').forEach(tab => tab.classList.remove('active'));
             document.querySelector(`.log-tab[data-log="${logType}"]`).classList.add('active');
-            
-            // Load logs
+            resetAndLoad();
+        }
+
+        function resetAndLoad() {
+            currentOffset = 0;
             loadLogs();
         }
 
-        function loadLogs() {
-            fetch(`/api/logs?file=${currentLog}&lines=1000`)
+        function loadOlder() {
+            const lines = parseInt(document.getElementById('lines-select').value);
+            currentOffset = Math.min(currentOffset + lines, Math.max(0, totalLines - lines));
+            loadLogs(false);
+        }
+
+        function loadNewer() {
+            const lines = parseInt(document.getElementById('lines-select').value);
+            currentOffset = Math.max(0, currentOffset - lines);
+            loadLogs(false);
+        }
+
+        function loadLogs(autoScroll = true) {
+            const lines = parseInt(document.getElementById('lines-select').value);
+            fetch(`/api/logs?file=${currentLog}&lines=${lines}&offset=${currentOffset}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
                         document.getElementById('log-content').textContent = `Errore: ${data.error}`;
                         return;
                     }
-                    
+
+                    totalLines = data.total_lines || 0;
                     const content = data.content || 'Log vuoto';
                     const logContent = document.getElementById('log-content');
                     const wasAtBottom = isScrolledToBottom();
-                    
+
                     logContent.textContent = content;
-                    
-                    // Auto-scroll if enabled and was at bottom
-                    if (document.getElementById('auto-scroll').checked && wasAtBottom) {
+
+                    if (autoScroll && document.getElementById('auto-scroll').checked && wasAtBottom) {
                         logContent.scrollTop = logContent.scrollHeight;
                     }
-                    
+
+                    // Update nav
+                    const nav = document.getElementById('log-nav');
+                    nav.style.display = 'flex';
+                    document.getElementById('btn-older').disabled = (data.start_line <= 1);
+                    document.getElementById('btn-newer').disabled = (currentOffset === 0);
+                    document.getElementById('log-range').textContent =
+                        totalLines > 0
+                            ? `Righe ${data.start_line}–${data.end_line} di ${totalLines}`
+                            : '';
+
                     lastRefreshTime = new Date();
                     updateRefreshStatus();
                 })
@@ -217,7 +255,7 @@
         // Auto-refresh
         document.getElementById('auto-refresh').addEventListener('change', function(e) {
             if (e.target.checked) {
-                autoRefreshInterval = setInterval(loadLogs, 5000);
+                autoRefreshInterval = setInterval(() => loadLogs(true), 5000);
             } else {
                 if (autoRefreshInterval) {
                     clearInterval(autoRefreshInterval);
@@ -239,11 +277,11 @@
         });
 
         // Initial load
-        loadLogs();
-        
-        // Start auto-refresh if enabled
+        resetAndLoad();
+
+        // Start auto-refresh if enabled (only refreshes current view, doesn't reset offset)
         if (document.getElementById('auto-refresh').checked) {
-            autoRefreshInterval = setInterval(loadLogs, 5000);
+            autoRefreshInterval = setInterval(() => loadLogs(true), 5000);
         }
 
         // Update refresh status every second
