@@ -1,10 +1,108 @@
 """HTML Parser module for DDUnlimited Search."""
 
 import re
+from datetime import datetime
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 import config
+
+# Month abbreviation map covering multiple phpBB locales.
+# phpBB uses the *forum's* language settings (server-side), which on ddunlimited is Italian.
+# The scraping session is tied to one fixed account so the format should be stable,
+# but we include other common locales as a safety net.
+_IT_MONTHS: dict[str, int] = {
+    # Italian
+    'gen': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'mag': 5, 'giu': 6,
+    'lug': 7, 'ago': 8, 'set': 9, 'ott': 10, 'nov': 11, 'dic': 12,
+    # English
+    'jan': 1,                     'may': 5, 'jun': 6,
+    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'dec': 12,
+    # French
+    'avr': 4, 'mai': 5, 'jui': 6, 'aou': 8,
+    # Spanish / Portuguese
+    'ene': 1, 'abr': 4, 'ago': 8,
+    # German
+    'jan': 1, 'mrz': 3, 'mai': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+    'okt': 10, 'dez': 12,
+}
+
+
+def _parse_post_date(html_soup) -> datetime | None:
+    """
+    Try to extract the creation date of the first post from a phpBB page.
+
+    Strategies (in order):
+    1. <time class="datetime" datetime="ISO-string"> — modern phpBB
+    2. Text patterns inside <p class="author"> or <div class="postbody">
+       e.g. "Gio Nov 14, 2024  12:00 pm" or "14 nov 2024, 12:00"
+    3. Any 4-digit year found in the first post author block as last resort
+    """
+    # Strategy 1: ISO datetime attribute
+    time_tag = html_soup.find('time', attrs={'datetime': True})
+    if time_tag:
+        raw = time_tag['datetime'].strip()
+        for fmt in ('%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d'):
+            try:
+                dt = datetime.strptime(raw[:19], fmt[:len(raw[:19])])
+                return dt.replace(tzinfo=None)
+            except ValueError:
+                pass
+
+    # Strategy 2: <p class="author"> — ddunlimited format:
+    #   da <strong>username</strong> » 21 feb 2026 09:58 pm
+    author_p = html_soup.find('p', class_='author')
+    if author_p:
+        author_text = author_p.get_text(' ', strip=True)
+        # Grab everything after the » separator
+        after_arrow = author_text.split('»')[-1] if '»' in author_text else author_text
+
+        # "21 feb 2026" or "21 feb 2026 09:58 pm"
+        m = re.search(r'(\d{1,2})\s+([a-z]{3})\s+(\d{4})', after_arrow, re.IGNORECASE)
+        if m:
+            day, month_str, year = int(m.group(1)), m.group(2).lower(), int(m.group(3))
+            month = _IT_MONTHS.get(month_str)
+            if month:
+                try:
+                    return datetime(year, month, day)
+                except ValueError:
+                    pass
+
+        # "Nov 14, 2024" (English phpBB locale)
+        m = re.search(r'([a-z]{3})\s+(\d{1,2}),\s+(\d{4})', after_arrow, re.IGNORECASE)
+        if m:
+            month_str, day, year = m.group(1).lower(), int(m.group(2)), int(m.group(3))
+            month = _IT_MONTHS.get(month_str)
+            if month:
+                try:
+                    return datetime(year, month, day)
+                except ValueError:
+                    pass
+
+        # "21/02/2026" or "02/21/2026" — numeric European / US fallback
+        m = re.search(r'(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', after_arrow)
+        if m:
+            a, b, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            # Assume DD/MM if first part > 12, else try DD/MM first (European default)
+            day, month = (a, b) if a > 12 else (a, b)
+            try:
+                return datetime(year, month, day)
+            except ValueError:
+                try:
+                    return datetime(year, a, b)  # US fallback MM/DD
+                except ValueError:
+                    pass
+
+    # Strategy 3: bare 4-digit year anywhere in the author block as last resort
+    if author_p:
+        m = re.search(r'\b(20\d{2}|19\d{2})\b', author_p.get_text())
+        if m:
+            try:
+                return datetime(int(m.group(1)), 1, 1)
+            except ValueError:
+                pass
+
+    return None
 
 
 # Quality patterns to extract
@@ -84,7 +182,7 @@ def parse_post_detail(html: str) -> dict:
     Parse an individual post page and extract rich metadata from h2/h4.
 
     Returns:
-        Dict with keys: quality, metadata, languages, status
+        Dict with keys: quality, metadata, languages, status, raw_info, post_created_at
     """
     soup = BeautifulSoup(html, 'html.parser')
     quality = None
@@ -92,6 +190,7 @@ def parse_post_detail(html: str) -> dict:
     languages = None
     status = None
     raw_info = None
+    post_created_at = _parse_post_date(soup)
 
     LANG_CODES = {'ITA','ENG','FRA','DEU','SPA','POR','JPN','KOR','CHN','RUS','ARA','NLD','POL','TUR','SWE','NOR','DAN','FIN'}
     AUDIO_CODECS = {'AC3','DTS','AAC','EAC3','TRUEHD','ATMOS','DD5','FLAC','MP3'}
@@ -166,7 +265,14 @@ def parse_post_detail(html: str) -> dict:
             combined = (existing + ' | ' + ' | '.join(extra_meta)) if existing else ' | '.join(extra_meta)
             metadata = ' | '.join(dict.fromkeys(combined.split(' | ')))
 
-    return {'quality': quality, 'metadata': metadata, 'languages': languages, 'status': status, 'raw_info': raw_info}
+    return {
+        'quality': quality,
+        'metadata': metadata,
+        'languages': languages,
+        'status': status,
+        'raw_info': raw_info,
+        'post_created_at': post_created_at,
+    }
 
 
 def is_navigation_link(link) -> bool:

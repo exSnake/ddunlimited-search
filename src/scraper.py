@@ -1,10 +1,12 @@
 """Main scraper module for DDUnlimited Search."""
 
 import logging
+import random
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 
 import requests
 
@@ -187,14 +189,61 @@ class DDUnlimitedScraper:
                     update_status(f"Scaricamento dettagli post ({config.POST_DETAIL_WORKERS} paralleli)...")
                     logger.info(f"{page_prefix}Fetching post details for {len(titles)} titles "
                                 f"({config.POST_DETAIL_WORKERS} workers)")
+
+                    # Pre-load existing details from DB to avoid redundant HTTP requests.
+                    # Each post gets a randomised next-refresh date based on post age so they
+                    # don't all expire simultaneously and cause a 12-hour mega-run.
+                    _now = datetime.now()
+                    _existing = database.get_existing_details([t['url'] for t in titles])
+
+                    def _refresh_interval(post_created_at) -> int:
+                        """Randomised refresh interval (days) based on post age.
+
+                        < 6 months  → 25–35 days  (content still evolving)
+                        6m – 2 years → 75–105 days
+                        > 2 years   → 150–210 days (stable, rarely changes)
+                        """
+                        created = None
+                        if post_created_at:
+                            try:
+                                created = datetime.fromisoformat(str(post_created_at))
+                            except (ValueError, TypeError):
+                                pass
+
+                        age_days = (_now - created).days if created else 365
+
+                        if age_days < 180:
+                            return random.randint(25, 35)
+                        elif age_days < 730:
+                            return random.randint(75, 105)
+                        else:
+                            return random.randint(150, 210)
+
                     _semaphore = threading.Semaphore(config.POST_DETAIL_WORKERS)
 
                     def _fetch_detail(title_data):
+                        url = title_data['url']
+                        existing = _existing.get(url)
+
+                        # Skip HTTP fetch if next refresh date hasn't been reached yet
+                        if existing and existing.get('details_next_refresh_at'):
+                            try:
+                                next_refresh = datetime.fromisoformat(existing['details_next_refresh_at'])
+                            except (ValueError, TypeError):
+                                next_refresh = None
+                            if next_refresh and _now < next_refresh:
+                                title_data['languages'] = existing['languages']
+                                title_data['status'] = existing['status']
+                                title_data['raw_info'] = existing['raw_info']
+                                title_data['_details_skipped'] = True
+                                logger.debug(f"Dettagli freschi fino a {next_refresh.date()}, skip: {title_data['title']}")
+                                return title_data
+
                         with _semaphore:
                             time.sleep(config.REQUEST_DELAY)
-                            detail_html = self.fetch_page(title_data['url'])
+                            detail_html = self.fetch_page(url)
                             if detail_html == 404:
-                                deleted = database.delete_title(title_data['url'])
+                                deleted = database.delete_title(url)
                                 if deleted:
                                     logger.info(f"Deleted 404 title: {title_data['title']}")
                                 title_data['_deleted'] = True
@@ -204,20 +253,26 @@ class DDUnlimitedScraper:
                                 if detail.get('quality'):
                                     title_data['quality'] = detail['quality']
                                 if detail.get('metadata'):
-                                    existing = title_data.get('metadata') or ''
-                                    combined = (existing + ' | ' + detail['metadata']
-                                                if existing else detail['metadata'])
+                                    existing_meta = title_data.get('metadata') or ''
+                                    combined = (existing_meta + ' | ' + detail['metadata']
+                                                if existing_meta else detail['metadata'])
                                     title_data['metadata'] = ' | '.join(
                                         dict.fromkeys(combined.split(' | ')))
                                 title_data['languages'] = detail.get('languages')
                                 title_data['status'] = detail.get('status')
                                 title_data['raw_info'] = detail.get('raw_info')
+                                title_data['post_created_at'] = detail.get('post_created_at')
+                                title_data['_details_scraped_at'] = _now
+                                interval = _refresh_interval(detail.get('post_created_at'))
+                                title_data['_details_next_refresh_at'] = _now + timedelta(days=interval)
+                                logger.debug(f"Next refresh in {interval}d: {title_data['title']}")
                         return title_data
 
                     detail_total = len(titles)
                     detail_done = 0
                     inserted = 0
                     updated = 0
+                    skipped_details = 0
                     with ThreadPoolExecutor(max_workers=config.POST_DETAIL_WORKERS) as executor:
                         futures = {executor.submit(_fetch_detail, t): t for t in titles}
                         for future in as_completed(futures):
@@ -227,6 +282,10 @@ class DDUnlimitedScraper:
                             if title_data.get('_deleted'):
                                 continue
 
+                            details_were_skipped = title_data.get('_details_skipped', False)
+                            if details_were_skipped:
+                                skipped_details += 1
+
                             is_new = database.insert_title(
                                 title=title_data['title'],
                                 url=title_data['url'],
@@ -235,7 +294,11 @@ class DDUnlimitedScraper:
                                 quality=title_data.get('quality'),
                                 languages=title_data.get('languages'),
                                 status=title_data.get('status'),
-                                raw_info=title_data.get('raw_info')
+                                raw_info=title_data.get('raw_info'),
+                                details_scraped_at=title_data.get('_details_scraped_at'),
+                                details_next_refresh_at=title_data.get('_details_next_refresh_at'),
+                                post_created_at=title_data.get('post_created_at'),
+                                update_details=not details_were_skipped,
                             )
                             if is_new:
                                 inserted += 1
@@ -249,8 +312,9 @@ class DDUnlimitedScraper:
                                              f"status={title_data.get('status')}]")
 
                             if detail_done % 10 == 0 or detail_done == detail_total:
-                                update_status(f"Dettagli: {detail_done}/{detail_total} scaricati "
-                                              f"({inserted} nuovi, {updated} aggiornati)...")
+                                update_status(f"Dettagli: {detail_done}/{detail_total} "
+                                              f"({inserted} nuovi, {updated} aggiornati, "
+                                              f"{skipped_details} già freschi)...")
 
                 total_processed = inserted + updated
                 logger.info(f"{page_prefix}Inserted {inserted} new titles, updated {updated}")

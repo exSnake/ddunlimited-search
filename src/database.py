@@ -3,7 +3,7 @@
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
 import config
@@ -171,6 +171,15 @@ def init_db():
         if 'raw_info' not in columns:
             cursor.execute("ALTER TABLE titles ADD COLUMN raw_info TEXT")
             columns_added = True
+        if 'details_scraped_at' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN details_scraped_at TIMESTAMP")
+            columns_added = True
+        if 'details_next_refresh_at' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN details_next_refresh_at TIMESTAMP")
+            columns_added = True
+        if 'post_created_at' not in columns:
+            cursor.execute("ALTER TABLE titles ADD COLUMN post_created_at TIMESTAMP")
+            columns_added = True
 
         # Commit column additions before creating indexes
         if columns_added:
@@ -198,9 +207,16 @@ def init_db():
 
 
 def insert_title(title: str, url: str, section: str, metadata: str = None, quality: str = None,
-                 languages: str = None, status: str = None, raw_info: str = None) -> bool:
-    """Insert a title into the database. Returns True if inserted, False if already exists."""
-    # Extract director, year, and first letter
+                 languages: str = None, status: str = None, raw_info: str = None,
+                 details_scraped_at: datetime = None, details_next_refresh_at: datetime = None,
+                 post_created_at: datetime = None, update_details: bool = True) -> bool:
+    """Insert a title into the database. Returns True if inserted, False if already exists.
+
+    Args:
+        update_details: If False, on UPDATE the detail columns (languages, status, raw_info,
+                        details_scraped_at, details_next_refresh_at, post_created_at) are left
+                        unchanged (used when details were skipped because still fresh).
+    """
     director, year, first_letter = extract_director_and_year(title)
 
     with get_db() as conn:
@@ -209,23 +225,74 @@ def insert_title(title: str, url: str, section: str, metadata: str = None, quali
             cursor.execute(
                 """
                 INSERT INTO titles (title, url, section, metadata, quality, director, year,
-                                    title_first_letter, languages, status, raw_info)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    title_first_letter, languages, status, raw_info,
+                                    details_scraped_at, details_next_refresh_at, post_created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (title, url, section, metadata, quality, director, year, first_letter, languages, status, raw_info)
+                (title, url, section, metadata, quality, director, year, first_letter,
+                 languages, status, raw_info, details_scraped_at, details_next_refresh_at,
+                 post_created_at)
             )
             return True
         except sqlite3.IntegrityError:
-            cursor.execute(
-                """
-                UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
-                                 director = ?, year = ?, title_first_letter = ?,
-                                 languages = ?, status = ?, raw_info = ?
-                WHERE url = ?
-                """,
-                (title, section, metadata, quality, director, year, first_letter, languages, status, raw_info, url)
-            )
+            if update_details:
+                cursor.execute(
+                    """
+                    UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
+                                     director = ?, year = ?, title_first_letter = ?,
+                                     languages = ?, status = ?, raw_info = ?,
+                                     details_scraped_at = ?, details_next_refresh_at = ?,
+                                     post_created_at = COALESCE(post_created_at, ?)
+                    WHERE url = ?
+                    """,
+                    (title, section, metadata, quality, director, year, first_letter,
+                     languages, status, raw_info, details_scraped_at, details_next_refresh_at,
+                     post_created_at, url)
+                )
+            else:
+                # Dettagli ancora freschi: aggiorna solo i campi base della listing
+                cursor.execute(
+                    """
+                    UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
+                                     director = ?, year = ?, title_first_letter = ?
+                    WHERE url = ?
+                    """,
+                    (title, section, metadata, quality, director, year, first_letter, url)
+                )
             return False
+
+
+def get_existing_details(urls: list) -> dict:
+    """
+    For a list of URLs, return existing detail fields from the DB.
+    Returns a dict keyed by URL: {languages, status, raw_info, details_scraped_at}.
+    Only includes rows that actually exist in the DB.
+    """
+    if not urls:
+        return {}
+    placeholders = ','.join('?' * len(urls))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT url, languages, status, raw_info,
+                   details_scraped_at, details_next_refresh_at, post_created_at
+            FROM titles
+            WHERE url IN ({placeholders})
+            """,
+            urls
+        )
+        return {
+            row['url']: {
+                'languages': row['languages'],
+                'status': row['status'],
+                'raw_info': row['raw_info'],
+                'details_scraped_at': row['details_scraped_at'],
+                'details_next_refresh_at': row['details_next_refresh_at'],
+                'post_created_at': row['post_created_at'],
+            }
+            for row in cursor.fetchall()
+        }
 
 
 def delete_title(url: str) -> bool:
