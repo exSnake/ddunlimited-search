@@ -415,7 +415,7 @@ class DDUnlimitedScraper:
     def scrape_single_page(self, url: str, section: str, status_callback=None) -> tuple[int, int, int]:
         """
         Scrape a single page (for manual import).
-        This method handles login if needed and scrapes just one page.
+        This method authenticates if needed and scrapes just one page.
 
         Args:
             url: The page URL
@@ -440,11 +440,11 @@ class DDUnlimitedScraper:
         # Ensure we're logged in
         if not self.logged_in:
             update_status("Accesso in corso...")
-            logger.info("Not logged in, attempting login...")
-            if not self.login():
+            logger.info("Not authenticated, attempting authentication...")
+            if not self.authenticate():
                 error_msg = "Errore: accesso fallito"
                 update_status(error_msg)
-                logger.error("Failed to login. Cannot scrape page.")
+                logger.error("Failed to authenticate. Cannot scrape page.")
                 return (0, 0, 0)
             update_status("Accesso completato")
         else:

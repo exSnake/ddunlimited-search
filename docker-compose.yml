@@ -19,6 +19,10 @@ services:
       - REQUEST_DELAY=${REQUEST_DELAY:-1.5}
       - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-30}
       - PAGES_FILE=${PAGES_FILE:-/app/pages.txt}
+      - SCRAPE_ENABLED=${SCRAPE_ENABLED:-true}
+      - SCRAPE_INTERVAL_DAYS=${SCRAPE_INTERVAL_DAYS:-3}
+      - SCRAPE_HOUR=${SCRAPE_HOUR:-2}
+      - SCRAPE_MINUTE=${SCRAPE_MINUTE:-0}
     volumes:
       - ./data:/app/data
       - ./pages.txt:/app/pages.txt

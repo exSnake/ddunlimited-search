@@ -1,5 +1,6 @@
 """Database module for DDUnlimited Search."""
 
+import os
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -548,6 +549,24 @@ def get_int_setting(key: str, default: int) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def get_schedule() -> dict:
+    """
+    Read the import schedule, falling back to the environment.
+
+    The web container writes these settings and the scheduler reads them, so
+    both go through here to stay in step.
+    """
+    enabled = get_setting('scrape_enabled', os.getenv('SCRAPE_ENABLED', 'true'))
+    return {
+        'enabled': str(enabled).lower() not in ('false', '0', 'no'),
+        'interval_days': get_int_setting(
+            'scrape_interval_days', int(os.getenv('SCRAPE_INTERVAL_DAYS', '3'))
+        ),
+        'hour': get_int_setting('scrape_hour', int(os.getenv('SCRAPE_HOUR', '2'))),
+        'minute': get_int_setting('scrape_minute', int(os.getenv('SCRAPE_MINUTE', '0'))),
+    }
 
 
 def migrate_existing_titles():

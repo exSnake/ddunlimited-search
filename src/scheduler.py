@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import config
 import database
@@ -28,28 +28,10 @@ logger = logging.getLogger(__name__)
 # the admin UI takes effect without restarting the container.
 POLL_SECONDS = 60
 
-
-def get_schedule() -> dict:
-    """
-    Read the schedule from the database, falling back to the environment.
-
-    The admin UI writes these settings, so they are read on every check rather
-    than cached at startup.
-    """
-    return {
-        'enabled': database.get_setting(
-            'scrape_enabled', os.getenv('SCRAPE_ENABLED', 'true')
-        ).lower() not in ('false', '0', 'no'),
-        'interval_days': database.get_int_setting(
-            'scrape_interval_days', int(os.getenv('SCRAPE_INTERVAL_DAYS', '3'))
-        ),
-        'hour': database.get_int_setting(
-            'scrape_hour', int(os.getenv('SCRAPE_HOUR', '2'))
-        ),
-        'minute': database.get_int_setting(
-            'scrape_minute', int(os.getenv('SCRAPE_MINUTE', '0'))
-        ),
-    }
+# How long to wait before retrying once an attempt has already been made.
+# Without it a scraper that cannot authenticate would hammer the forum on
+# every poll.
+RETRY_BACKOFF = timedelta(hours=1)
 
 
 def parse_timestamp(value) -> datetime | None:
@@ -83,21 +65,24 @@ def should_run_import(schedule: dict) -> tuple[bool, str]:
     if not schedule['enabled']:
         return False, "Scheduled imports are disabled"
 
+    now = datetime.now()
+    last_attempt = database.get_last_import()
+    attempted_at = parse_timestamp(last_attempt.get('started_at')) if last_attempt else None
+
     last_import = database.get_last_import(successful_only=True)
-    if not last_import:
+    last_completed = parse_timestamp(last_import.get('completed_at')) if last_import else None
+
+    if not last_completed:
+        if attempted_at and now - attempted_at < RETRY_BACKOFF:
+            return False, "No successful import yet, waiting before the next attempt."
         return True, "No successful import found. Running first import."
 
-    last_completed = parse_timestamp(last_import.get('completed_at'))
-    if not last_completed:
-        return True, "Last import has no usable completion time. Running import."
-
     interval_days = schedule['interval_days']
-    days_since_last = (datetime.now() - last_completed).days
+    days_since_last = (now.date() - last_completed.date()).days
     if days_since_last < interval_days:
         return False, (f"Last successful import was {days_since_last} days ago. "
                        f"Waiting {interval_days - days_since_last} more days.")
 
-    now = datetime.now()
     scheduled_time = now.replace(
         hour=schedule['hour'], minute=schedule['minute'], second=0, microsecond=0
     )
@@ -111,9 +96,7 @@ def should_run_import(schedule: dict) -> tuple[bool, str]:
     if (now - scheduled_time).total_seconds() / 3600 <= 1:
         # One attempt per window: without this a failing import would be retried
         # on every poll for the rest of the hour.
-        last_attempt = database.get_last_import()
-        started_at = parse_timestamp(last_attempt.get('started_at')) if last_attempt else None
-        if started_at and started_at >= scheduled_time:
+        if attempted_at and attempted_at >= scheduled_time:
             return False, "Already attempted an import in this window."
 
         return True, "Within scheduled time window. Running import."
@@ -159,14 +142,14 @@ def main():
     database.init_db()
     logger.info("Database initialized")
 
-    schedule = get_schedule()
+    schedule = database.get_schedule()
     logger.info(f"Scrape interval: {schedule['interval_days']} days")
     logger.info(f"Scheduled time: {schedule['hour']:02d}:{schedule['minute']:02d}")
 
     last_reason = None
     while True:
         try:
-            schedule = get_schedule()
+            schedule = database.get_schedule()
             due, reason = should_run_import(schedule)
 
             if reason != last_reason:

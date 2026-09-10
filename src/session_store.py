@@ -8,6 +8,7 @@ and scheduler containers mount.
 
 import json
 import os
+import tempfile
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -39,6 +40,23 @@ def normalize_cookies(raw) -> dict:
     return {}
 
 
+# Cloudflare reissues these on every visit, so their short lifetime says
+# nothing about how long the forum session lasts.
+_TRANSIENT_COOKIES = {'__cf_bm', 'cf_clearance', '__cfruid', '__cflb'}
+
+
+def _as_naive(value: str) -> Optional[datetime]:
+    """Parse an ISO timestamp as local wall time, dropping any offset."""
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except (AttributeError, ValueError):
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone().replace(tzinfo=None)
+
+
 def earliest_expiry(raw) -> Optional[str]:
     """Return the soonest expiry among cookie objects, as an ISO string."""
     if not isinstance(raw, list):
@@ -47,6 +65,8 @@ def earliest_expiry(raw) -> Optional[str]:
     stamps = []
     for item in raw:
         if not isinstance(item, dict):
+            continue
+        if item.get('name') in _TRANSIENT_COOKIES:
             continue
         value = item.get('expirationDate')
         if value:
@@ -74,11 +94,16 @@ def save(cookies: dict, expires_at: str = None, source: str = 'unknown',
         os.makedirs(directory, exist_ok=True)
 
     # Write through a temporary file so the scheduler never reads a half-written
-    # session while the web container is saving one.
-    tmp = f"{_path()}.tmp"
-    with open(tmp, 'w', encoding='utf-8') as handle:
-        json.dump(record, handle, indent=2)
-    os.replace(tmp, _path())
+    # session while the web container is saving one. The name has to be unique
+    # across containers, which rules out the pid: they each have their own.
+    handle, tmp = tempfile.mkstemp(dir=directory or '.', prefix='.session-', suffix='.tmp')
+    try:
+        with os.fdopen(handle, 'w', encoding='utf-8') as stream:
+            json.dump(record, stream, indent=2)
+        os.replace(tmp, _path())
+    except Exception:
+        os.unlink(tmp)
+        raise
 
     return record
 
@@ -141,17 +166,13 @@ def status() -> dict:
         'cookie_names': sorted(record.get('cookies', {}).keys()),
     }
 
-    expires_at = record.get('expires_at')
-    if expires_at:
-        try:
-            expiry = datetime.fromisoformat(expires_at)
-            now = datetime.now()
-            if expiry <= now:
-                info['state'] = 'expired'
-            elif expiry - now < timedelta(days=3):
-                info['state'] = 'expiring'
-            info['days_left'] = max((expiry - now).days, 0)
-        except ValueError:
-            pass
+    expiry = _as_naive(record.get('expires_at') or '')
+    if expiry:
+        now = datetime.now()
+        if expiry <= now:
+            info['state'] = 'expired'
+        elif expiry - now < timedelta(days=3):
+            info['state'] = 'expiring'
+        info['days_left'] = max((expiry - now).days, 0)
 
     return info

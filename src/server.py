@@ -1,5 +1,6 @@
 """Flask web server for DDUnlimited Search."""
 
+import hmac
 import logging
 import os
 import sys
@@ -314,8 +315,10 @@ def api_session_post():
     if not config.SESSION_TOKEN:
         return jsonify({'error': 'Session relay is not configured'}), 503
 
-    token = request.headers.get('X-Session-Token', '')
-    if token != config.SESSION_TOKEN:
+    # Compared as bytes: compare_digest refuses non-ASCII str, and the header is
+    # whatever the caller sent.
+    token = request.headers.get('X-Session-Token', '').encode('utf-8', 'replace')
+    if not hmac.compare_digest(token, config.SESSION_TOKEN.encode('utf-8')):
         web_logger.warning(f"Rejected session push from {request.remote_addr}: bad token")
         return jsonify({'error': 'Invalid token'}), 401
 
@@ -323,6 +326,11 @@ def api_session_post():
     cookies = session_store.normalize_cookies(data.get('cookies'))
     if not cookies:
         return jsonify({'error': 'Missing "cookies" field'}), 400
+
+    # Without a reference page there is no way to tell a good session from a
+    # guest one, and rejecting the push would blame the cookies for it.
+    if not parser.parse_pages_file(config.PAGES_FILE):
+        return jsonify({'error': 'No pages configured, cannot verify a session'}), 503
 
     # A stored session that still works is worth more than the pushed one: the
     # forum hands out a single autologin key per device, and replacing a session
@@ -375,18 +383,7 @@ def api_session_delete():
 def api_schedule_get():
     """Get the automatic import schedule."""
     return jsonify({
-        'enabled': database.get_setting(
-            'scrape_enabled', os.getenv('SCRAPE_ENABLED', 'true')
-        ).lower() not in ('false', '0', 'no'),
-        'interval_days': database.get_int_setting(
-            'scrape_interval_days', int(os.getenv('SCRAPE_INTERVAL_DAYS', '3'))
-        ),
-        'hour': database.get_int_setting(
-            'scrape_hour', int(os.getenv('SCRAPE_HOUR', '2'))
-        ),
-        'minute': database.get_int_setting(
-            'scrape_minute', int(os.getenv('SCRAPE_MINUTE', '0'))
-        ),
+        **database.get_schedule(),
         'last_import': database.get_last_import(),
         'last_successful_import': database.get_last_import(successful_only=True),
     })
@@ -513,8 +510,10 @@ def api_import_all():
             
             try:
                 scraper_instance = scraper.DDUnlimitedScraper()
-                scraper_instance.run(status_callback=update_status)
-                import_status['message'] = 'Importazione completa terminata con successo'
+                if scraper_instance.run(status_callback=update_status):
+                    import_status['message'] = 'Importazione completa terminata con successo'
+                else:
+                    import_status['message'] = "Importazione interrotta: vedi scraper.log"
             except Exception as e:
                 error_msg = f'Errore: {str(e)}'
                 logger.error(f"Error in full import thread: {error_msg}", exc_info=True)
