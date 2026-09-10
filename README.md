@@ -111,11 +111,30 @@ FLASK_HOST=127.0.0.1
 FLASK_PORT=5000
 FLASK_DEBUG=False
 
-# Scheduler (solo per Docker)
+# Relay della sessione browser
+SESSION_TOKEN=un_segreto_a_caso
+
+# Scheduler (valori di default, la pagina Amministrazione ha la precedenza)
+SCRAPE_ENABLED=true
 SCRAPE_INTERVAL_DAYS=3
 SCRAPE_HOUR=2
 SCRAPE_MINUTE=0
 ```
+
+### Sessione browser
+
+Il login del forum e' dietro un challenge Cloudflare, quindi lo scraper non puo'
+autenticarsi da solo: riusa i cookie di un browser gia' collegato.
+
+L'estensione [EDD2k](https://github.com/exSnake/edd2k) li invia con il suo
+*session relay*: nelle impostazioni del popup vanno indicati il dominio
+(`ddunlimited.net`), l'endpoint (`http://<host>/api/session`) e lo stesso valore
+di `SESSION_TOKEN`. Da li' in poi i cookie si rinnovano da soli ogni volta che
+navighi il forum.
+
+I cookie ricevuti vengono provati su una pagina reale prima di essere salvati,
+quindi una sessione da ospite non puo' sovrascriverne una valida. Lo stato si
+vede nella pagina Amministrazione.
 
 ### File pages.txt
 
@@ -171,6 +190,7 @@ ddunlimited-search/
 │   ├── scraper.py         # Scraper principale
 │   ├── scheduler.py       # Scheduler per reimportazione
 │   ├── server.py          # Server Flask
+│   ├── session_store.py   # Cookie di sessione inviati dal browser
 │   ├── static/            # File statici (CSS, JS)
 │   └── templates/         # Template HTML
 ├── data/                  # Database (non committato)
