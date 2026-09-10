@@ -18,6 +18,17 @@ LOGIN_URL = f"{BASE_URL}/ucp.php?mode=login"
 # Default: data/ddunlimited.db for local development, can be overridden via DATABASE_PATH env var
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/ddunlimited.db")
 
+# Browser session relay
+# Cookies captured from a logged-in browser, stored next to the database so
+# both the web and scheduler containers can read them.
+SESSION_FILE = os.getenv(
+    "SESSION_FILE",
+    os.path.join(os.path.dirname(DATABASE_PATH) or ".", "session.json")
+)
+# Shared secret the browser extension must send to push a session. Empty
+# disables the endpoint.
+SESSION_TOKEN = os.getenv("SESSION_TOKEN", "")
+
 # Scraper settings
 REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.5"))  # seconds between requests
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))  # request timeout in seconds

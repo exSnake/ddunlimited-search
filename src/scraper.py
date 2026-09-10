@@ -13,6 +13,7 @@ import requests
 import config
 import database
 import parser
+import session_store
 
 # Create logs directory if it doesn't exist
 import os
@@ -52,9 +53,87 @@ class DDUnlimitedScraper:
         })
         self.logged_in = False
 
+    def apply_session(self) -> bool:
+        """
+        Load browser cookies from the session store into the HTTP session.
+
+        Returns:
+            True if a stored session was applied, False if none is available
+        """
+        record = session_store.load()
+        if not record:
+            return False
+
+        self.set_cookies(record.get('cookies', {}))
+        if record.get('user_agent'):
+            self.session.headers['User-Agent'] = record['user_agent']
+
+        logger.info(f"Loaded browser session ({len(record.get('cookies', {}))} cookies, "
+                    f"pushed {record.get('updated_at')})")
+        return True
+
+    def set_cookies(self, cookies: dict) -> None:
+        """Load an explicit cookie mapping into the HTTP session."""
+        for name, value in cookies.items():
+            self.session.cookies.set(name, value, domain='ddunlimited.net', path='/')
+
+    def current_cookies(self) -> dict:
+        """The cookie jar as the forum last left it."""
+        return {c.name: c.value for c in self.session.cookies}
+
+    def verify_session(self) -> bool:
+        """
+        Check the current cookies actually reach forum content.
+
+        Guests get a 200 with the links stripped out, so a status code says
+        nothing. Parsing a real page is the only honest check.
+        """
+        pages = parser.parse_pages_file(config.PAGES_FILE)
+        if not pages:
+            logger.warning("No pages configured, cannot verify session")
+            return False
+
+        html = self.fetch_page(pages[0]['url'])
+        if not isinstance(html, str):
+            logger.error("Session check failed: could not fetch the reference page")
+            return False
+
+        titles = parser.parse_page(html, pages[0]['section'])
+        if titles:
+            logger.info(f"Session verified ({len(titles)} titles visible)")
+            return True
+
+        logger.error("Session check failed: page loaded but no titles are visible")
+        return False
+
+    def authenticate(self) -> bool:
+        """
+        Authenticate against the forum, preferring a browser session.
+
+        Returns:
+            True if the scraper can see forum content, False otherwise
+        """
+        if self.apply_session():
+            if self.verify_session():
+                self.logged_in = True
+                # The forum may have handed back a rotated session id or
+                # autologin key; losing those would end the session.
+                session_store.refresh(self.current_cookies())
+                return True
+            logger.error("Stored browser session is no longer valid. "
+                         "Open the forum in the browser to push a fresh one.")
+            self.session.cookies.clear()
+
+        if not config.USERNAME or not config.PASSWORD:
+            logger.error("No usable browser session and no credentials configured.")
+            return False
+
+        logger.info("Falling back to password login")
+        return self.login()
+
     def login(self) -> bool:
         """
-        Login to the forum.
+        Login to the forum with username and password.
 
         Returns:
             True if login successful, False otherwise
@@ -383,12 +462,15 @@ class DDUnlimitedScraper:
         logger.info(f"Single page import completed: {result[0]} titles found, {result[1]} inserted, {result[2]} updated")
         return result
 
-    def run(self, status_callback=None):
+    def run(self, status_callback=None) -> bool:
         """
         Run the scraper.
-        
+
         Args:
             status_callback: Optional callback function(status_message) to update status
+
+        Returns:
+            True if the import completed, False if it bailed out early
         """
         def update_status(msg):
             if status_callback:
@@ -408,14 +490,14 @@ class DDUnlimitedScraper:
         logger.info(f"Import session started (ID: {import_id})")
 
         try:
-            # Login
+            # Authentication
             update_status("Accesso in corso...")
-            if not self.login():
+            if not self.authenticate():
                 error_msg = "Errore: accesso fallito"
                 update_status(error_msg)
-                logger.error("Failed to login. Exiting.")
+                logger.error("Failed to authenticate. Exiting.")
                 database.complete_import(import_id, 0, 0, 0, success=False)
-                return
+                return False
             update_status("Accesso completato")
 
             # Load pages from file
@@ -426,7 +508,7 @@ class DDUnlimitedScraper:
                 update_status(error_msg)
                 logger.error(f"No pages to scrape. Check {config.PAGES_FILE}")
                 database.complete_import(import_id, 0, 0, 0, success=False)
-                return
+                return False
 
             update_status(f"Caricate {len(pages)} pagine da importare")
             logger.info(f"Loaded {len(pages)} pages to scrape")
@@ -473,6 +555,8 @@ class DDUnlimitedScraper:
             logger.info(f"Titles updated: {total_updated}")
             logger.info(f"Total titles in database: {stats['total_titles']}")
             logger.info(f"Total sections: {stats['total_sections']}")
+            session_store.refresh(self.current_cookies())
+            return True
         except Exception as e:
             error_msg = f"Errore durante l'importazione: {str(e)}"
             update_status(error_msg)
