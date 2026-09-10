@@ -658,6 +658,7 @@ def main():
     """Main entry point."""
     # Initialize database
     database.init_db()
+    database.migrate_refresh_policy()
     
     # Migrate existing titles (populate director, year, title_first_letter)
     # This is safe to run multiple times - it only updates NULL values

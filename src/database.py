@@ -163,9 +163,6 @@ def init_db():
         if 'languages' not in columns:
             cursor.execute("ALTER TABLE titles ADD COLUMN languages TEXT")
             columns_added = True
-        if 'status' not in columns:
-            cursor.execute("ALTER TABLE titles ADD COLUMN status TEXT")
-            columns_added = True
         if 'deleted_at' not in columns:
             cursor.execute("ALTER TABLE titles ADD COLUMN deleted_at TIMESTAMP")
             columns_added = True
@@ -218,15 +215,18 @@ def init_db():
 
 
 def insert_title(title: str, url: str, section: str, metadata: str = None, quality: str = None,
-                 languages: str = None, status: str = None, raw_info: str = None,
+                 languages: str = None, raw_info: str = None,
                  details_scraped_at: datetime = None, details_next_refresh_at: datetime = None,
-                 post_created_at: datetime = None, update_details: bool = True) -> bool:
-    """Insert a title into the database. Returns True if inserted, False if already exists.
+                 post_created_at: datetime = None, update_details: bool = True) -> str:
+    """Insert or update a title.
+
+    Returns 'inserted', 'updated' or 'unchanged'. The content update is guarded
+    so a row is only written when a field actually differs, which is what makes
+    the reported counts mean something.
 
     Args:
-        update_details: If False, on UPDATE the detail columns (languages, status, raw_info,
-                        details_scraped_at, details_next_refresh_at, post_created_at) are left
-                        unchanged (used when details were skipped because still fresh).
+        update_details: False when the details were not fetched, so the detail
+                        columns and the revisit bookkeeping are left alone.
     """
     director, year, first_letter = extract_director_and_year(title)
 
@@ -236,47 +236,64 @@ def insert_title(title: str, url: str, section: str, metadata: str = None, quali
             cursor.execute(
                 """
                 INSERT INTO titles (title, url, section, metadata, quality, director, year,
-                                    title_first_letter, languages, status, raw_info,
+                                    title_first_letter, languages, raw_info,
                                     details_scraped_at, details_next_refresh_at, post_created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (title, url, section, metadata, quality, director, year, first_letter,
-                 languages, status, raw_info, details_scraped_at, details_next_refresh_at,
+                 languages, raw_info, details_scraped_at, details_next_refresh_at,
                  post_created_at)
             )
-            return True
+            return 'inserted'
         except sqlite3.IntegrityError:
-            if update_details:
-                cursor.execute(
-                    """
-                    UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
-                                     director = ?, year = ?, title_first_letter = ?,
-                                     languages = ?, status = ?, raw_info = ?,
-                                     details_scraped_at = ?, details_next_refresh_at = ?,
-                                     post_created_at = COALESCE(post_created_at, ?)
-                    WHERE url = ?
-                    """,
-                    (title, section, metadata, quality, director, year, first_letter,
-                     languages, status, raw_info, details_scraped_at, details_next_refresh_at,
-                     post_created_at, url)
-                )
-            else:
-                # Dettagli ancora freschi: aggiorna solo i campi base della listing
-                cursor.execute(
-                    """
-                    UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
-                                     director = ?, year = ?, title_first_letter = ?
-                    WHERE url = ?
-                    """,
-                    (title, section, metadata, quality, director, year, first_letter, url)
-                )
-            return False
+            pass
+
+        if update_details:
+            cursor.execute(
+                """
+                UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
+                                 director = ?, year = ?, title_first_letter = ?,
+                                 languages = ?, raw_info = ?,
+                                 post_created_at = COALESCE(post_created_at, ?)
+                WHERE url = ?
+                  AND (title IS NOT ? OR section IS NOT ? OR metadata IS NOT ?
+                       OR quality IS NOT ? OR languages IS NOT ? OR raw_info IS NOT ?)
+                """,
+                (title, section, metadata, quality, director, year, first_letter,
+                 languages, raw_info, post_created_at, url,
+                 title, section, metadata, quality, languages, raw_info)
+            )
+            changed = cursor.rowcount > 0
+
+            # Bookkeeping is written even when nothing changed, otherwise the
+            # post would be fetched again on every run.
+            cursor.execute(
+                """
+                UPDATE titles SET details_scraped_at = ?, details_next_refresh_at = ?
+                WHERE url = ?
+                """,
+                (details_scraped_at, details_next_refresh_at, url)
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE titles SET title = ?, section = ?, metadata = ?, quality = ?,
+                                 director = ?, year = ?, title_first_letter = ?
+                WHERE url = ?
+                  AND (title IS NOT ? OR section IS NOT ? OR metadata IS NOT ? OR quality IS NOT ?)
+                """,
+                (title, section, metadata, quality, director, year, first_letter, url,
+                 title, section, metadata, quality)
+            )
+            changed = cursor.rowcount > 0
+
+        return 'updated' if changed else 'unchanged'
 
 
 def get_existing_details(urls: list) -> dict:
     """
     For a list of URLs, return existing detail fields from the DB.
-    Returns a dict keyed by URL: {languages, status, raw_info, details_scraped_at}.
+    Returns a dict keyed by URL: {languages, raw_info, details_scraped_at, deleted_at}.
     Only includes rows that actually exist in the DB.
     """
     if not urls:
@@ -286,7 +303,7 @@ def get_existing_details(urls: list) -> dict:
         cursor = conn.cursor()
         cursor.execute(
             f"""
-            SELECT url, languages, status, raw_info,
+            SELECT url, languages, raw_info, deleted_at,
                    details_scraped_at, details_next_refresh_at, post_created_at
             FROM titles
             WHERE url IN ({placeholders})
@@ -296,8 +313,8 @@ def get_existing_details(urls: list) -> dict:
         return {
             row['url']: {
                 'languages': row['languages'],
-                'status': row['status'],
                 'raw_info': row['raw_info'],
+                'deleted_at': row['deleted_at'],
                 'details_scraped_at': row['details_scraped_at'],
                 'details_next_refresh_at': row['details_next_refresh_at'],
                 'post_created_at': row['post_created_at'],
@@ -538,6 +555,55 @@ def set_setting(key: str, value) -> None:
             """,
             (key, str(value), datetime.now())
         )
+
+
+def migrate_refresh_policy() -> dict:
+    """One-off cleanup of rows written by versions before the revisit policy.
+
+    Drops the alphabet navigation links that were stored as titles, and clears
+    the revisit date of every post that has already been read, so old posts are
+    never fetched again.
+    """
+    import config
+
+    if get_setting('migrated_refresh_policy'):
+        return {'skipped': True}
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DELETE FROM titles
+            WHERE LENGTH(title) = 1 AND title GLOB '[#0-9A-Za-z]' AND metadata IS NULL
+        """)
+        removed = cursor.rowcount
+
+        cursor.execute(
+            """
+            UPDATE titles
+            SET details_next_refresh_at = CASE
+                WHEN post_created_at IS NOT NULL
+                 AND datetime(post_created_at, ?) > datetime('now')
+                THEN datetime(post_created_at, ?)
+                ELSE NULL
+            END
+            WHERE details_scraped_at IS NOT NULL
+            """,
+            (f'+{config.POST_RECHECK_DAYS} days', f'+{config.POST_RECHECK_DAYS} days')
+        )
+        rescheduled = cursor.rowcount
+
+        cursor.execute("PRAGMA table_info(titles)")
+        if any(row[1] == 'status' for row in cursor.fetchall()):
+            try:
+                cursor.execute("ALTER TABLE titles DROP COLUMN status")
+            except sqlite3.OperationalError:
+                # An older SQLite cannot drop a column; leaving it costs nothing
+                # now that nothing writes to it.
+                pass
+
+    set_setting('migrated_refresh_policy', '1')
+    return {'skipped': False, 'removed': removed, 'rescheduled': rescheduled}
 
 
 def get_int_setting(key: str, default: int) -> int:

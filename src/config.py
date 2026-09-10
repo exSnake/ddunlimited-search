@@ -47,3 +47,6 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # Post detail scraping
 SCRAPE_POST_DETAILS = os.getenv("SCRAPE_POST_DETAILS", "true").lower() == "true"
 POST_DETAIL_WORKERS = int(os.getenv("POST_DETAIL_WORKERS", "3"))
+# A topic is revisited once, this many days after it was created: a title can
+# still be edited in the first days, and never after that.
+POST_RECHECK_DAYS = int(os.getenv("POST_RECHECK_DAYS", "30"))

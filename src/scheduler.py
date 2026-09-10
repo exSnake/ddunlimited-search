@@ -140,6 +140,7 @@ def main():
     logger.info("DDUnlimited Search Scheduler starting...")
 
     database.init_db()
+    database.migrate_refresh_policy()
     logger.info("Database initialized")
 
     schedule = database.get_schedule()

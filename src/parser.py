@@ -182,13 +182,12 @@ def parse_post_detail(html: str) -> dict:
     Parse an individual post page and extract rich metadata from h2/h4.
 
     Returns:
-        Dict with keys: quality, metadata, languages, status, raw_info, post_created_at
+        Dict with keys: quality, metadata, languages, raw_info, post_created_at
     """
     soup = BeautifulSoup(html, 'html.parser')
     quality = None
     metadata = None
     languages = None
-    status = None
     raw_info = None
     post_created_at = _parse_post_date(soup)
 
@@ -243,9 +242,7 @@ def parse_post_detail(html: str) -> dict:
             title_attr = img.get('title', '')
             alt_attr = img.get('alt', '').lower()
 
-            if 'stv.status.' in src or 'status.' in src:
-                status = title_attr or img.get('alt', '') or None
-            elif any(lang_key in src for lang_key in ['ita.', 'eng.', 'fra.', 'deu.', 'spa.',
+            if any(lang_key in src for lang_key in ['ita.', 'eng.', 'fra.', 'deu.', 'spa.',
                                                         'por.', 'jpn.', 'kor.', 'chn.', 'rus.']):
                 code = LANGUAGE_MAP.get(alt_attr)
                 if not code and title_attr:
@@ -269,18 +266,25 @@ def parse_post_detail(html: str) -> dict:
         'quality': quality,
         'metadata': metadata,
         'languages': languages,
-        'status': status,
         'raw_info': raw_info,
         'post_created_at': post_created_at,
     }
 
 
+# The alphabet strip at the top of an index thread: "#", "A", "B" ... Some are
+# images, some are plain text, and neither is a title.
+NAVIGATION_TEXT_RE = re.compile(r'^[#0-9A-Za-z]$')
+
+
 def is_navigation_link(link) -> bool:
-    """Check if a link is a navigation letter link (contains only an image)."""
-    # Check if link contains only an image with no meaningful text
+    """Check if a link is a navigation letter link rather than a title."""
+    text = link.get_text(strip=True)
+
+    if NAVIGATION_TEXT_RE.match(text):
+        return True
+
     img = link.find('img')
     if img:
-        text = link.get_text(strip=True)
         # If there's an image and no text (or just whitespace), it's navigation
         if not text:
             return True

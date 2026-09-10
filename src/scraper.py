@@ -1,12 +1,12 @@
 """Main scraper module for DDUnlimited Search."""
 
 import logging
-import random
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -41,6 +41,11 @@ scraper_logger.addHandler(scraper_console_handler)
 scraper_logger.propagate = False  # Don't propagate to root logger
 
 logger = scraper_logger
+
+# Backing off when the forum throttles us, in seconds.
+RATE_LIMIT_MAX_RETRIES = 3
+RATE_LIMIT_BACKOFF_BASE = 30
+RATE_LIMIT_BACKOFF_MAX = 300
 
 
 class DDUnlimitedScraper:
@@ -193,6 +198,27 @@ class DDUnlimitedScraper:
             logger.error(f"Login request failed: {e}")
             return False
 
+    @staticmethod
+    def _retry_after(response, attempt: int) -> float:
+        """How long to wait after being throttled.
+
+        Prefer what the server asked for; fall back to backing off ourselves.
+        """
+        header = response.headers.get('Retry-After') if response is not None else None
+        if header:
+            try:
+                return max(float(header), 1.0)
+            except ValueError:
+                try:
+                    retry_at = parsedate_to_datetime(header)
+                    if retry_at.tzinfo:
+                        retry_at = retry_at.replace(tzinfo=None)
+                    return max((retry_at - datetime.now()).total_seconds(), 1.0)
+                except (TypeError, ValueError):
+                    pass
+
+        return min(RATE_LIMIT_BACKOFF_BASE * (2 ** attempt), RATE_LIMIT_BACKOFF_MAX)
+
     def fetch_page(self, url: str) -> str | None:
         """
         Fetch a page content.
@@ -201,24 +227,41 @@ class DDUnlimitedScraper:
             url: The URL to fetch
 
         Returns:
-            HTML content or None on error
+            HTML content, 404 when the page is gone, or None on error
         """
-        try:
-            response = self.session.get(
-                url,
-                timeout=config.REQUEST_TIMEOUT
-            )
-            response.raise_for_status()
-            return response.text
-        except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code == 404:
-                logger.warning(f"404 Not Found: {url}")
-                return 404
-            logger.error(f"Failed to fetch {url}: {e}")
-            return None
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch {url}: {e}")
-            return None
+        for attempt in range(RATE_LIMIT_MAX_RETRIES + 1):
+            try:
+                response = self.session.get(
+                    url,
+                    timeout=config.REQUEST_TIMEOUT
+                )
+                response.raise_for_status()
+                return response.text
+            except requests.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
+
+                if status == 404:
+                    logger.warning(f"404 Not Found: {url}")
+                    return 404
+
+                # Being throttled is the forum asking us to slow down, not an
+                # error to retry immediately.
+                if status in (429, 503) and attempt < RATE_LIMIT_MAX_RETRIES:
+                    wait = self._retry_after(e.response, attempt)
+                    logger.warning(f"Throttled ({status}) on {url}, waiting {wait:.0f}s "
+                                   f"(attempt {attempt + 1}/{RATE_LIMIT_MAX_RETRIES})")
+                    time.sleep(wait)
+                    continue
+
+                logger.error(f"Failed to fetch {url}: {e}")
+                return None
+            except requests.RequestException as e:
+                logger.error(f"Failed to fetch {url}: {e}")
+                return None
+
+        logger.error(f"Giving up on {url} after being throttled "
+                     f"{RATE_LIMIT_MAX_RETRIES} times")
+        return None
 
     def scrape_page(self, url: str, section: str, max_retries: int = 3, status_callback=None, page_num: int = None, total_pages: int = None) -> tuple[int, int, int]:
         """
@@ -263,6 +306,11 @@ class DDUnlimitedScraper:
                 update_status(f"Trovati {len(titles)} titoli, inserimento in corso...")
                 logger.info(f"{page_prefix}Found {len(titles)} titles on page")
 
+                inserted = 0
+                updated = 0
+                unchanged = 0
+                skipped_details = 0
+
                 # Optionally enrich each title by visiting its individual post page
                 if config.SCRAPE_POST_DETAILS and titles:
                     update_status(f"Scaricamento dettagli post ({config.POST_DETAIL_WORKERS} paralleli)...")
@@ -270,33 +318,27 @@ class DDUnlimitedScraper:
                                 f"({config.POST_DETAIL_WORKERS} workers)")
 
                     # Pre-load existing details from DB to avoid redundant HTTP requests.
-                    # Each post gets a randomised next-refresh date based on post age so they
-                    # don't all expire simultaneously and cause a 12-hour mega-run.
                     _now = datetime.now()
                     _existing = database.get_existing_details([t['url'] for t in titles])
 
-                    def _refresh_interval(post_created_at) -> int:
-                        """Randomised refresh interval (days) based on post age.
+                    def _next_refresh_at(post_created_at):
+                        """When to look at this post again, or None for never.
 
-                        < 6 months  → 25–35 days  (content still evolving)
-                        6m – 2 years → 75–105 days
-                        > 2 years   → 150–210 days (stable, rarely changes)
+                        A title is only ever edited in the days right after the
+                        topic is created, so a single revisit at
+                        POST_RECHECK_DAYS covers it and nothing else is worth a
+                        request.
                         """
-                        created = None
-                        if post_created_at:
-                            try:
-                                created = datetime.fromisoformat(str(post_created_at))
-                            except (ValueError, TypeError):
-                                pass
+                        if not post_created_at:
+                            return None
 
-                        age_days = (_now - created).days if created else 365
+                        try:
+                            created = datetime.fromisoformat(str(post_created_at))
+                        except (ValueError, TypeError):
+                            return None
 
-                        if age_days < 180:
-                            return random.randint(25, 35)
-                        elif age_days < 730:
-                            return random.randint(75, 105)
-                        else:
-                            return random.randint(150, 210)
+                        recheck_at = created + timedelta(days=config.POST_RECHECK_DAYS)
+                        return recheck_at if recheck_at > _now else None
 
                     _semaphore = threading.Semaphore(config.POST_DETAIL_WORKERS)
 
@@ -304,18 +346,27 @@ class DDUnlimitedScraper:
                         url = title_data['url']
                         existing = _existing.get(url)
 
-                        # Skip HTTP fetch if next refresh date hasn't been reached yet
-                        if existing and existing.get('details_next_refresh_at'):
-                            try:
-                                next_refresh = datetime.fromisoformat(existing['details_next_refresh_at'])
-                            except (ValueError, TypeError):
-                                next_refresh = None
-                            if next_refresh and _now < next_refresh:
+                        # The forum already told us this one is gone; asking again
+                        # would 404 on every run from here on.
+                        if existing and existing.get('deleted_at'):
+                            title_data['_deleted'] = True
+                            return title_data
+
+                        # A post already visited is only fetched again if it has a
+                        # revisit date that has come round. No date means never
+                        # again, which is the case for everything but a new topic.
+                        if existing and existing.get('details_scraped_at'):
+                            next_refresh = None
+                            if existing.get('details_next_refresh_at'):
+                                try:
+                                    next_refresh = datetime.fromisoformat(existing['details_next_refresh_at'])
+                                except (ValueError, TypeError):
+                                    next_refresh = None
+
+                            if next_refresh is None or _now < next_refresh:
                                 title_data['languages'] = existing['languages']
-                                title_data['status'] = existing['status']
                                 title_data['raw_info'] = existing['raw_info']
                                 title_data['_details_skipped'] = True
-                                logger.debug(f"Dettagli freschi fino a {next_refresh.date()}, skip: {title_data['title']}")
                                 return title_data
 
                         with _semaphore:
@@ -338,20 +389,15 @@ class DDUnlimitedScraper:
                                     title_data['metadata'] = ' | '.join(
                                         dict.fromkeys(combined.split(' | ')))
                                 title_data['languages'] = detail.get('languages')
-                                title_data['status'] = detail.get('status')
                                 title_data['raw_info'] = detail.get('raw_info')
                                 title_data['post_created_at'] = detail.get('post_created_at')
                                 title_data['_details_scraped_at'] = _now
-                                interval = _refresh_interval(detail.get('post_created_at'))
-                                title_data['_details_next_refresh_at'] = _now + timedelta(days=interval)
-                                logger.debug(f"Next refresh in {interval}d: {title_data['title']}")
+                                title_data['_details_next_refresh_at'] = _next_refresh_at(
+                                    detail.get('post_created_at'))
                         return title_data
 
                     detail_total = len(titles)
                     detail_done = 0
-                    inserted = 0
-                    updated = 0
-                    skipped_details = 0
                     with ThreadPoolExecutor(max_workers=config.POST_DETAIL_WORKERS) as executor:
                         futures = {executor.submit(_fetch_detail, t): t for t in titles}
                         for future in as_completed(futures):
@@ -365,38 +411,55 @@ class DDUnlimitedScraper:
                             if details_were_skipped:
                                 skipped_details += 1
 
-                            is_new = database.insert_title(
+                            outcome = database.insert_title(
                                 title=title_data['title'],
                                 url=title_data['url'],
                                 section=title_data['section'],
                                 metadata=title_data.get('metadata'),
                                 quality=title_data.get('quality'),
                                 languages=title_data.get('languages'),
-                                status=title_data.get('status'),
                                 raw_info=title_data.get('raw_info'),
                                 details_scraped_at=title_data.get('_details_scraped_at'),
                                 details_next_refresh_at=title_data.get('_details_next_refresh_at'),
                                 post_created_at=title_data.get('post_created_at'),
                                 update_details=not details_were_skipped,
                             )
-                            if is_new:
+                            if outcome == 'inserted':
                                 inserted += 1
                                 logger.debug(f"{page_prefix}[NUOVO] {title_data['title']} "
-                                             f"[q={title_data.get('quality')} lang={title_data.get('languages')} "
-                                             f"status={title_data.get('status')}]")
-                            else:
+                                             f"[q={title_data.get('quality')} lang={title_data.get('languages')}]")
+                            elif outcome == 'updated':
                                 updated += 1
-                                logger.debug(f"{page_prefix}[GIA' PRESENTE] {title_data['title']} "
-                                             f"[q={title_data.get('quality')} lang={title_data.get('languages')} "
-                                             f"status={title_data.get('status')}]")
+                                logger.debug(f"{page_prefix}[MODIFICATO] {title_data['title']} "
+                                             f"[q={title_data.get('quality')} lang={title_data.get('languages')}]")
+                            else:
+                                unchanged += 1
 
                             if detail_done % 10 == 0 or detail_done == detail_total:
                                 update_status(f"Dettagli: {detail_done}/{detail_total} "
-                                              f"({inserted} nuovi, {updated} aggiornati, "
-                                              f"{skipped_details} già freschi)...")
+                                              f"({inserted} nuovi, {updated} modificati, "
+                                              f"{skipped_details} non riletti)...")
 
-                total_processed = inserted + updated
-                logger.info(f"{page_prefix}Inserted {inserted} new titles, updated {updated}")
+                else:
+                    for title_data in titles:
+                        outcome = database.insert_title(
+                            title=title_data['title'],
+                            url=title_data['url'],
+                            section=title_data['section'],
+                            metadata=title_data.get('metadata'),
+                            quality=title_data.get('quality'),
+                            update_details=False,
+                        )
+                        if outcome == 'inserted':
+                            inserted += 1
+                        elif outcome == 'updated':
+                            updated += 1
+                        else:
+                            unchanged += 1
+
+                total_processed = inserted + updated + unchanged
+                logger.info(f"{page_prefix}{inserted} new, {updated} changed, "
+                            f"{unchanged} unchanged, {skipped_details} not re-fetched")
                 return (total_processed, inserted, updated)
             else:
                 if attempt < max_retries:
