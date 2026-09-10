@@ -205,6 +205,16 @@ def init_db():
             )
         """)
 
+        # Runtime settings editable from the admin UI. Web and scheduler run in
+        # separate containers and only share the database, so it lives here.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP
+            )
+        """)
+
 
 def insert_title(title: str, url: str, section: str, metadata: str = None, quality: str = None,
                  languages: str = None, status: str = None, raw_info: str = None,
@@ -463,17 +473,25 @@ def complete_import(
         )
 
 
-def get_last_import() -> Optional[dict]:
+def get_last_import(successful_only: bool = False) -> Optional[dict]:
     """
     Get the last import record.
+
+    Args:
+        successful_only: only consider imports that completed successfully.
+            The scheduler uses this so a failed run does not push the next
+            attempt a full interval away.
+
     Returns None if no imports found.
     """
+    where = "WHERE status = 'completed'" if successful_only else ""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, started_at, completed_at, titles_found, 
+        cursor.execute(f"""
+            SELECT id, started_at, completed_at, titles_found,
                    titles_inserted, titles_updated, status
             FROM import_history
+            {where}
             ORDER BY started_at DESC
             LIMIT 1
         """)
@@ -481,6 +499,55 @@ def get_last_import() -> Optional[dict]:
         if row:
             return dict(row)
         return None
+
+
+def get_recent_imports(limit: int = 10) -> list[dict]:
+    """Get the most recent import records, newest first."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, started_at, completed_at, titles_found,
+                   titles_inserted, titles_updated, status
+            FROM import_history
+            ORDER BY started_at DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_setting(key: str, default: str = None) -> Optional[str]:
+    """Read a runtime setting, falling back to default when unset."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row['value'] if row else default
+
+
+def set_setting(key: str, value) -> None:
+    """Write a runtime setting."""
+    from datetime import datetime
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                           updated_at = excluded.updated_at
+            """,
+            (key, str(value), datetime.now())
+        )
+
+
+def get_int_setting(key: str, default: int) -> int:
+    """Read a runtime setting as int, falling back to default when unusable."""
+    raw = get_setting(key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def migrate_existing_titles():

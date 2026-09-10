@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import config
 import database
@@ -24,147 +24,161 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# How often the schedule is re-evaluated. Short enough that a change made in
+# the admin UI takes effect without restarting the container.
+POLL_SECONDS = 60
 
-def should_run_import() -> bool:
+
+def get_schedule() -> dict:
     """
-    Check if import should run based on last import time and schedule.
-    Returns True if import should run.
+    Read the schedule from the database, falling back to the environment.
+
+    The admin UI writes these settings, so they are read on every check rather
+    than cached at startup.
     """
-    interval_days = int(os.getenv('SCRAPE_INTERVAL_DAYS', '3'))
-    scrape_hour = int(os.getenv('SCRAPE_HOUR', '2'))
-    scrape_minute = int(os.getenv('SCRAPE_MINUTE', '0'))
+    return {
+        'enabled': database.get_setting(
+            'scrape_enabled', os.getenv('SCRAPE_ENABLED', 'true')
+        ).lower() not in ('false', '0', 'no'),
+        'interval_days': database.get_int_setting(
+            'scrape_interval_days', int(os.getenv('SCRAPE_INTERVAL_DAYS', '3'))
+        ),
+        'hour': database.get_int_setting(
+            'scrape_hour', int(os.getenv('SCRAPE_HOUR', '2'))
+        ),
+        'minute': database.get_int_setting(
+            'scrape_minute', int(os.getenv('SCRAPE_MINUTE', '0'))
+        ),
+    }
 
-    last_import = database.get_last_import()
-    
-    if not last_import:
-        logger.info("No previous import found. Running first import.")
-        return True
 
-    last_completed = last_import.get('completed_at')
-    if not last_completed:
-        logger.info("Last import did not complete. Running import.")
-        return True
+def parse_timestamp(value) -> datetime | None:
+    """Parse a timestamp as written by any past version of complete_import."""
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
 
-    # Parse the completed_at timestamp
-    if isinstance(last_completed, str):
+    for attempt in (
+        lambda v: datetime.fromisoformat(v.replace('Z', '+00:00')).replace(tzinfo=None),
+        lambda v: datetime.strptime(v, '%Y-%m-%d %H:%M:%S.%f'),
+        lambda v: datetime.strptime(v, '%Y-%m-%d %H:%M:%S'),
+    ):
         try:
-            # Try ISO format first
-            if 'T' in last_completed:
-                last_completed = datetime.fromisoformat(last_completed.replace('Z', '+00:00'))
-                if last_completed.tzinfo:
-                    last_completed = last_completed.replace(tzinfo=None)
-            else:
-                # Try SQLite datetime format
-                last_completed = datetime.strptime(last_completed, '%Y-%m-%d %H:%M:%S.%f')
+            return attempt(value)
         except (ValueError, AttributeError):
-            try:
-                last_completed = datetime.strptime(last_completed, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                logger.warning(f"Could not parse timestamp: {last_completed}. Running import.")
-                return True
-    
-    # Check if enough days have passed
-    if isinstance(last_completed, datetime):
-        days_since_last = (datetime.now() - last_completed).days
-    else:
-        logger.warning(f"Unexpected timestamp type: {type(last_completed)}. Running import.")
-        return True
+            continue
+
+    return None
+
+
+def should_run_import(schedule: dict) -> tuple[bool, str]:
+    """
+    Decide whether an import is due.
+
+    Returns:
+        (should_run, reason) so the caller can log the reason only when it
+        changes, instead of once per poll.
+    """
+    if not schedule['enabled']:
+        return False, "Scheduled imports are disabled"
+
+    last_import = database.get_last_import(successful_only=True)
+    if not last_import:
+        return True, "No successful import found. Running first import."
+
+    last_completed = parse_timestamp(last_import.get('completed_at'))
+    if not last_completed:
+        return True, "Last import has no usable completion time. Running import."
+
+    interval_days = schedule['interval_days']
+    days_since_last = (datetime.now() - last_completed).days
     if days_since_last < interval_days:
-        logger.info(f"Last import was {days_since_last} days ago. "
-                   f"Waiting {interval_days - days_since_last} more days.")
-        return False
+        return False, (f"Last successful import was {days_since_last} days ago. "
+                       f"Waiting {interval_days - days_since_last} more days.")
 
-    # Check if we're at the scheduled time (within a 1-hour window)
     now = datetime.now()
-    scheduled_time = now.replace(hour=scrape_hour, minute=scrape_minute, second=0, microsecond=0)
-    
-    # If scheduled time is in the past today, check if we're within 1 hour after it
-    if scheduled_time < now:
-        time_diff = (now - scheduled_time).total_seconds() / 3600
-        if time_diff <= 1:
-            logger.info(f"Within scheduled time window. Running import.")
-            return True
-        else:
-            # Scheduled time passed, wait for next day
-            logger.info(f"Scheduled time ({scrape_hour:02d}:{scrape_minute:02d}) passed. "
-                       f"Waiting for next scheduled time.")
-            return False
-    else:
-        # Scheduled time is in the future today
-        logger.info(f"Scheduled time is {scrape_hour:02d}:{scrape_minute:02d}. "
-                   f"Current time is {now.hour:02d}:{now.minute:02d}. Waiting.")
-        return False
+    scheduled_time = now.replace(
+        hour=schedule['hour'], minute=schedule['minute'], second=0, microsecond=0
+    )
+
+    if scheduled_time > now:
+        return False, (f"Import is due, waiting for "
+                       f"{schedule['hour']:02d}:{schedule['minute']:02d}.")
+
+    # A one-hour window keeps a restart from re-running an import that already
+    # ran earlier today.
+    if (now - scheduled_time).total_seconds() / 3600 <= 1:
+        # One attempt per window: without this a failing import would be retried
+        # on every poll for the rest of the hour.
+        last_attempt = database.get_last_import()
+        started_at = parse_timestamp(last_attempt.get('started_at')) if last_attempt else None
+        if started_at and started_at >= scheduled_time:
+            return False, "Already attempted an import in this window."
+
+        return True, "Within scheduled time window. Running import."
+
+    return False, (f"Scheduled time ({schedule['hour']:02d}:{schedule['minute']:02d}) "
+                   f"passed. Waiting for next scheduled time.")
 
 
-def wait_until_scheduled_time():
-    """Wait until the scheduled time."""
-    scrape_hour = int(os.getenv('SCRAPE_HOUR', '2'))
-    scrape_minute = int(os.getenv('SCRAPE_MINUTE', '0'))
-    
-    now = datetime.now()
-    scheduled_time = now.replace(hour=scrape_hour, minute=scrape_minute, second=0, microsecond=0)
-    
-    # If scheduled time is in the past, schedule for tomorrow
-    if scheduled_time < now:
-        scheduled_time += timedelta(days=1)
-    
-    wait_seconds = (scheduled_time - now).total_seconds()
-    logger.info(f"Waiting until {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} "
-               f"({wait_seconds/3600:.1f} hours)")
-    
-    time.sleep(wait_seconds)
-
-
-def run_import():
+def run_import() -> bool:
     """
     Run the scraper import.
-    
+
     Note: Retry logic (3 attempts per page) is handled automatically
     by the scraper.scrape_page() method with exponential backoff.
     """
     logger.info("=" * 60)
     logger.info("Starting scheduled import")
     logger.info("=" * 60)
-    
+
     try:
         scraper_instance = scraper.DDUnlimitedScraper()
-        scraper_instance.run()
-        logger.info("=" * 60)
-        logger.info("Scheduled import completed successfully")
-        logger.info("=" * 60)
+        completed = scraper_instance.run()
     except Exception as e:
         logger.error(f"Error during scheduled import: {e}", exc_info=True)
         logger.error("=" * 60)
         logger.error("Scheduled import failed")
         logger.error("=" * 60)
+        return False
+
+    logger.info("=" * 60)
+    if completed:
+        logger.info("Scheduled import completed successfully")
+    else:
+        logger.error("Scheduled import did not complete. See scraper.log.")
+    logger.info("=" * 60)
+    return bool(completed)
 
 
 def main():
     """Main scheduler loop."""
     logger.info("DDUnlimited Search Scheduler starting...")
-    logger.info(f"Scrape interval: {os.getenv('SCRAPE_INTERVAL_DAYS', '3')} days")
-    logger.info(f"Scheduled time: {os.getenv('SCRAPE_HOUR', '2')}:{os.getenv('SCRAPE_MINUTE', '0')}")
-    
-    # Initialize database
+
     database.init_db()
     logger.info("Database initialized")
-    
-    # Run initial import if needed
-    if should_run_import():
-        run_import()
-    
-    # Main loop
+
+    schedule = get_schedule()
+    logger.info(f"Scrape interval: {schedule['interval_days']} days")
+    logger.info(f"Scheduled time: {schedule['hour']:02d}:{schedule['minute']:02d}")
+
+    last_reason = None
     while True:
         try:
-            # Wait until scheduled time
-            wait_until_scheduled_time()
-            
-            # Check if we should run import
-            if should_run_import():
+            schedule = get_schedule()
+            due, reason = should_run_import(schedule)
+
+            if reason != last_reason:
+                logger.info(reason)
+                last_reason = reason
+
+            if due:
                 run_import()
-            else:
-                logger.info("Skipping import - conditions not met")
-                
+                last_reason = None
+
+            time.sleep(POLL_SECONDS)
+
         except KeyboardInterrupt:
             logger.info("Scheduler stopped by user")
             break

@@ -11,6 +11,7 @@ import config
 import database
 import parser
 import scraper
+import session_store
 
 # Create logs directory if it doesn't exist
 os.makedirs('logs', exist_ok=True)
@@ -292,6 +293,131 @@ def api_pages_post():
     
     except Exception as e:
         return jsonify({'error': f'Error saving pages.txt: {str(e)}'}), 500
+
+
+@app.route('/api/session', methods=['GET'])
+def api_session_get():
+    """Report the state of the stored browser session."""
+    info = session_store.status()
+    info['relay_configured'] = bool(config.SESSION_TOKEN)
+    return jsonify(info)
+
+
+@app.route('/api/session', methods=['POST'])
+def api_session_post():
+    """
+    Accept forum cookies captured by the browser extension.
+
+    The cookies are checked against a real forum page before being stored, so
+    a guest session can never overwrite a working one.
+    """
+    if not config.SESSION_TOKEN:
+        return jsonify({'error': 'Session relay is not configured'}), 503
+
+    token = request.headers.get('X-Session-Token', '')
+    if token != config.SESSION_TOKEN:
+        web_logger.warning(f"Rejected session push from {request.remote_addr}: bad token")
+        return jsonify({'error': 'Invalid token'}), 401
+
+    data = request.get_json(silent=True) or {}
+    cookies = session_store.normalize_cookies(data.get('cookies'))
+    if not cookies:
+        return jsonify({'error': 'Missing "cookies" field'}), 400
+
+    # A stored session that still works is worth more than the pushed one: the
+    # forum hands out a single autologin key per device, and replacing a session
+    # the scraper owns with the browser's copy makes the two fight over it.
+    keeper = scraper.DDUnlimitedScraper()
+    if keeper.apply_session() and keeper.verify_session():
+        session_store.refresh(keeper.current_cookies())
+        return jsonify({'valid': True, 'kept': True,
+                        'message': 'Stored session still works, kept it'})
+
+    user_agent = data.get('userAgent')
+    probe = scraper.DDUnlimitedScraper()
+    probe.set_cookies(cookies)
+    if user_agent:
+        probe.session.headers['User-Agent'] = user_agent
+
+    if not probe.verify_session():
+        web_logger.info("Session push rejected: cookies do not reach forum content")
+        return jsonify({
+            'valid': False,
+            'error': 'These cookies do not reach forum content'
+        }), 422
+
+    # Keep the jar as it stands after the check: verifying can itself rotate the
+    # session id and the autologin key, and the pushed values are stale by then.
+    record = session_store.save(
+        {**cookies, **probe.current_cookies()},
+        expires_at=data.get('expiresAt') or session_store.earliest_expiry(data.get('cookies')),
+        source=data.get('source', 'browser-extension'),
+        user_agent=user_agent
+    )
+    web_logger.info(f"Stored browser session from {request.remote_addr} "
+                    f"({len(cookies)} cookies)")
+
+    return jsonify({
+        'valid': True,
+        'updated_at': record['updated_at'],
+        'expires_at': record['expires_at'],
+    })
+
+
+@app.route('/api/session', methods=['DELETE'])
+def api_session_delete():
+    """Forget the stored browser session."""
+    session_store.clear()
+    return jsonify({'success': True})
+
+
+@app.route('/api/schedule', methods=['GET'])
+def api_schedule_get():
+    """Get the automatic import schedule."""
+    return jsonify({
+        'enabled': database.get_setting(
+            'scrape_enabled', os.getenv('SCRAPE_ENABLED', 'true')
+        ).lower() not in ('false', '0', 'no'),
+        'interval_days': database.get_int_setting(
+            'scrape_interval_days', int(os.getenv('SCRAPE_INTERVAL_DAYS', '3'))
+        ),
+        'hour': database.get_int_setting(
+            'scrape_hour', int(os.getenv('SCRAPE_HOUR', '2'))
+        ),
+        'minute': database.get_int_setting(
+            'scrape_minute', int(os.getenv('SCRAPE_MINUTE', '0'))
+        ),
+        'last_import': database.get_last_import(),
+        'last_successful_import': database.get_last_import(successful_only=True),
+    })
+
+
+@app.route('/api/schedule', methods=['POST'])
+def api_schedule_post():
+    """Update the automatic import schedule."""
+    data = request.get_json(silent=True) or {}
+
+    ranges = {
+        'interval_days': (1, 365, 'scrape_interval_days'),
+        'hour': (0, 23, 'scrape_hour'),
+        'minute': (0, 59, 'scrape_minute'),
+    }
+
+    for field, (low, high, key) in ranges.items():
+        if field not in data:
+            continue
+        try:
+            value = int(data[field])
+        except (TypeError, ValueError):
+            return jsonify({'error': f'"{field}" must be a number'}), 400
+        if not low <= value <= high:
+            return jsonify({'error': f'"{field}" must be between {low} and {high}'}), 400
+        database.set_setting(key, value)
+
+    if 'enabled' in data:
+        database.set_setting('scrape_enabled', 'true' if data['enabled'] else 'false')
+
+    return jsonify({'success': True})
 
 
 @app.route('/api/import/single', methods=['POST'])

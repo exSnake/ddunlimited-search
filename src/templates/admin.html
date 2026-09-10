@@ -44,6 +44,7 @@
             color: #eee;
         }
         .form-group input[type="text"],
+        .form-group input[type="number"],
         .form-group textarea {
             width: 100%;
             padding: 8px;
@@ -54,7 +55,42 @@
             font-family: 'Courier New', monospace;
             font-size: 13px;
         }
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .session-state {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            color: #eee;
+        }
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: #777;
+        }
+        .dot.ok { background: #4CAF50; }
+        .dot.expiring { background: #ff9800; }
+        .dot.expired,
+        .dot.missing { background: #f44336; }
+        .session-detail {
+            color: #9aa5b1;
+            font-size: 13px;
+        }
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #eee;
+            margin-bottom: 15px;
+        }
         .form-group input[type="text"]:focus,
+        .form-group input[type="number"]:focus,
         .form-group textarea:focus {
             outline: none;
             border-color: #0f4c75;
@@ -192,6 +228,64 @@
 
         <main>
             <div class="admin-container">
+                <!-- Browser Session Section -->
+                <div class="admin-section">
+                    <h2>Sessione browser</h2>
+                    <p>Lo scraper usa i cookie di una sessione gia' autenticata, inviati
+                       dall'estensione del browser.</p>
+
+                    <div class="session-state">
+                        <span class="dot" id="session-dot"></span>
+                        <span id="session-summary">Caricamento...</span>
+                    </div>
+                    <div class="session-detail" id="session-detail"></div>
+
+                    <div class="button-group" style="margin-top: 15px;">
+                        <button class="btn btn-secondary" onclick="loadSession()">Ricarica</button>
+                        <button class="btn btn-secondary" onclick="clearSession()" id="btn-clear-session">
+                            Dimentica sessione
+                        </button>
+                    </div>
+
+                    <div id="session-status" class="status-message"></div>
+                </div>
+
+                <!-- Schedule Section -->
+                <div class="admin-section">
+                    <h2>Pianificazione import</h2>
+                    <p>Ogni quanto lo scheduler rifa' l'importazione e a che ora. Le modifiche
+                       hanno effetto entro un minuto, senza riavviare il container.</p>
+
+                    <label class="toggle">
+                        <input type="checkbox" id="schedule-enabled">
+                        <span>Import automatico attivo</span>
+                    </label>
+
+                    <div class="schedule-grid">
+                        <div class="form-group">
+                            <label for="schedule-interval">Ogni quanti giorni:</label>
+                            <input type="number" id="schedule-interval" min="1" max="365">
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-hour">Ora (0-23):</label>
+                            <input type="number" id="schedule-hour" min="0" max="23">
+                        </div>
+                        <div class="form-group">
+                            <label for="schedule-minute">Minuto (0-59):</label>
+                            <input type="number" id="schedule-minute" min="0" max="59">
+                        </div>
+                    </div>
+
+                    <div class="session-detail" id="schedule-detail"></div>
+
+                    <div class="button-group" style="margin-top: 15px;">
+                        <button class="btn btn-primary" onclick="saveSchedule()">Salva pianificazione</button>
+                        <button class="btn btn-secondary" onclick="loadSchedule()">Ricarica</button>
+                    </div>
+
+                    <div id="schedule-status" class="status-message"></div>
+                </div>
+
                 <!-- Pages.txt Editor Section -->
                 <div class="admin-section">
                     <h2>Gestione pages.txt</h2>
@@ -250,10 +344,118 @@
         // Load pages.txt on page load
         window.addEventListener('DOMContentLoaded', function() {
             loadPages();
+            loadSession();
+            loadSchedule();
             checkImportStatus();
             // Check import status every 1 second for more responsive updates
             setInterval(checkImportStatus, 1000);
         });
+
+        function formatDate(value) {
+            if (!value) return 'mai';
+            const date = new Date(value);
+            return isNaN(date) ? value : date.toLocaleString('it-IT');
+        }
+
+        function loadSession() {
+            fetch('/api/session')
+                .then(response => response.json())
+                .then(data => {
+                    const dot = document.getElementById('session-dot');
+                    const summary = document.getElementById('session-summary');
+                    const detail = document.getElementById('session-detail');
+
+                    dot.className = `dot ${data.state}`;
+
+                    const labels = {
+                        ok: 'Sessione valida',
+                        expiring: 'Sessione in scadenza',
+                        expired: 'Sessione scaduta',
+                        missing: 'Nessuna sessione salvata'
+                    };
+                    summary.textContent = labels[data.state] || data.state;
+
+                    if (!data.present) {
+                        detail.textContent = data.relay_configured
+                            ? 'Apri il forum nel browser con l\'estensione attiva per inviarne una.'
+                            : 'Relay non configurato: manca SESSION_TOKEN.';
+                        return;
+                    }
+
+                    const parts = [`Ricevuta il ${formatDate(data.updated_at)} da ${data.source}`];
+                    if (data.expires_at) {
+                        parts.push(`scade il ${formatDate(data.expires_at)}`
+                            + (data.days_left !== undefined ? ` (${data.days_left} giorni)` : ''));
+                    }
+                    parts.push(`cookie: ${(data.cookie_names || []).join(', ')}`);
+                    detail.textContent = parts.join(' · ');
+                })
+                .catch(error => {
+                    showStatus('session-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function clearSession() {
+            fetch('/api/session', { method: 'DELETE' })
+                .then(response => response.json())
+                .then(() => {
+                    showStatus('session-status', 'info', 'Sessione dimenticata.');
+                    loadSession();
+                })
+                .catch(error => {
+                    showStatus('session-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function loadSchedule() {
+            fetch('/api/schedule')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('schedule-enabled').checked = data.enabled;
+                    document.getElementById('schedule-interval').value = data.interval_days;
+                    document.getElementById('schedule-hour').value = data.hour;
+                    document.getElementById('schedule-minute').value = data.minute;
+
+                    const last = data.last_successful_import;
+                    const detail = document.getElementById('schedule-detail');
+                    if (last) {
+                        detail.textContent = `Ultimo import riuscito: ${formatDate(last.completed_at)}`
+                            + ` — ${last.titles_found} titoli, ${last.titles_inserted} nuovi.`;
+                    } else {
+                        detail.textContent = 'Nessun import riuscito registrato.';
+                    }
+                })
+                .catch(error => {
+                    showStatus('schedule-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function saveSchedule() {
+            const payload = {
+                enabled: document.getElementById('schedule-enabled').checked,
+                interval_days: parseInt(document.getElementById('schedule-interval').value, 10),
+                hour: parseInt(document.getElementById('schedule-hour').value, 10),
+                minute: parseInt(document.getElementById('schedule-minute').value, 10)
+            };
+
+            fetch('/api/schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showStatus('schedule-status', 'error', `Errore: ${data.error}`);
+                    } else {
+                        showStatus('schedule-status', 'success', 'Pianificazione salvata.');
+                        loadSchedule();
+                    }
+                })
+                .catch(error => {
+                    showStatus('schedule-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
 
         function loadPages() {
             fetch('/api/pages')
