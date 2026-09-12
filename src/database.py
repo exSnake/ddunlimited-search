@@ -383,11 +383,13 @@ def _build_search_filter(
     min_rating: Optional[float],
     sections: Optional[list] = None,
     qualities: Optional[list] = None,
+    allow_empty: bool = False,
 ) -> tuple[str, list]:
     """Build the shared FROM/WHERE clause for the search queries.
 
-    Returns (base_query, params). A base query of "FROM titles WHERE 1=0" means
-    no search criteria were given and the caller should return nothing.
+    Returns (base_query, params). Without title criteria the result matches
+    nothing, unless allow_empty is set — the home page browses the catalogue
+    with no query at all.
     """
     title_conditions = []
     params = []
@@ -419,6 +421,10 @@ def _build_search_filter(
     if title_conditions:
         base_query = (f"FROM titles {RATING_JOIN} WHERE "
                       + deleted_filter + " AND ".join(title_conditions))
+    elif allow_empty:
+        base_query = (f"FROM titles {RATING_JOIN} WHERE "
+                      + (deleted_filter or "") + "1=1")
+        params = []
     else:
         # No criteria: match nothing, but keep the join so the callers' rating
         # columns still resolve.
@@ -548,6 +554,7 @@ def search_titles_grouped(
     sort: str = "title",
     sections: Optional[list] = None,
     qualities: Optional[list] = None,
+    allow_empty: bool = False,
 ) -> tuple[list[dict], int]:
     """Search titles grouped by film rather than by post.
 
@@ -562,7 +569,7 @@ def search_titles_grouped(
     """
     base_query, params = _build_search_filter(
         query, section, search_type, director, include_deleted, min_rating,
-        sections, qualities
+        sections, qualities, allow_empty
     )
 
     if "1=0" in base_query:
@@ -572,6 +579,7 @@ def search_titles_grouped(
         'rating': f"MAX({RATING_SCORE_SQL}) DESC NULLS LAST, sort_title",
         'year': "MAX(year) DESC NULLS LAST, sort_title",
         'year_asc': "MIN(year) ASC NULLS LAST, sort_title",
+        'recent': "MAX(titles.id) DESC",
     }.get(sort, "sort_title")
 
     with get_db() as conn:
@@ -623,6 +631,24 @@ def search_titles_grouped(
         return [g for g in grouped.values() if g], total
 
 
+_FACET_CACHE: dict = {}
+_FACET_TTL = 300
+
+
+def get_browse_facets() -> dict:
+    """Facets for the whole catalogue, cached.
+
+    The home page browses with no filter, so these cost a full grouping pass
+    and only change when an import runs.
+    """
+    cached = _FACET_CACHE.get('browse')
+    if cached and (datetime.now() - cached[0]).total_seconds() < _FACET_TTL:
+        return cached[1]
+    facets = get_search_facets(query='', allow_empty=True)
+    _FACET_CACHE['browse'] = (datetime.now(), facets)
+    return facets
+
+
 def get_search_facets(
     query: str,
     section: Optional[str] = None,
@@ -632,6 +658,7 @@ def get_search_facets(
     min_rating: Optional[float] = None,
     sections: Optional[list] = None,
     qualities: Optional[list] = None,
+    allow_empty: bool = False,
 ) -> dict:
     """Count films per section and per quality for the current search.
 
@@ -644,7 +671,7 @@ def get_search_facets(
         kw.update(overrides)
         base_query, params = _build_search_filter(
             query, section, search_type, director, include_deleted, min_rating,
-            kw['sections'], kw['qualities']
+            kw['sections'], kw['qualities'], allow_empty
         )
         if "1=0" in base_query:
             return {}
@@ -678,7 +705,7 @@ def get_search_facets(
 
     base_query, params = _build_search_filter(
         query, section, search_type, director, include_deleted, min_rating,
-        sections, qualities
+        sections, qualities, allow_empty
     )
     total_posts = 0
     if "1=0" not in base_query:

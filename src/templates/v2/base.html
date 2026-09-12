@@ -61,12 +61,60 @@
 </div>
 
 <script>
-  // I filtri sono una form GET e restano usabili senza questo: qui si toglie
-  // solo il giro in più del bottone.
+  // I filtri sono form GET e restano usabili senza niente di tutto questo:
+  // qui si toglie solo il giro in più del bottone.
   document.addEventListener('change', function (e) {
     var form = e.target.closest('form[data-autosubmit]');
     if (form && e.target.type !== 'range') form.submit();
   });
+
+  // Ricerca mentre si scrive. Si chiede al server la stessa pagina e se ne
+  // scambiano due pezzi: il cursore resta dov'è e il markup lo fa sempre Jinja.
+  (function () {
+    var form = document.querySelector('form[data-live]');
+    if (!form || !window.fetch || !window.DOMParser) return;
+
+    var REGIONS = ['results-region', 'panel-region'];
+    var timer = null, pending = null;
+
+    function urlFor() {
+      var data = new URLSearchParams(new FormData(form));
+      data.delete('page');
+      return form.action + '?' + data.toString();
+    }
+
+    function swap(url) {
+      if (pending) pending.abort();
+      pending = new AbortController();
+      document.body.classList.add('is-searching');
+      fetch(url, {signal: pending.signal, headers: {'X-Partial': '1'}})
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          REGIONS.forEach(function (id) {
+            var next = doc.getElementById(id), now = document.getElementById(id);
+            if (next && now) now.replaceWith(next);
+          });
+          history.replaceState(null, '', url);
+          document.body.classList.remove('is-searching');
+        })
+        .catch(function (err) {
+          if (err.name !== 'AbortError') { document.body.classList.remove('is-searching'); form.submit(); }
+        });
+    }
+
+    form.addEventListener('input', function (e) {
+      if (e.target.type !== 'search') return;
+      clearTimeout(timer);
+      timer = setTimeout(function () { swap(urlFor()); }, 300);
+    });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearTimeout(timer);
+      swap(urlFor());
+    });
+  })();
 </script>
 </body>
 </html>
