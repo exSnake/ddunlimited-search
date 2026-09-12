@@ -36,11 +36,16 @@ sul fondo (Plex). Accenti freddi per l'interazione, caldi per i voti, verde per
   senza match TMDB non hanno un `tmdb_id` su cui raggruppare e restano post singoli:
   le due forme devono convivere nella stessa lista.
 
+- **I filtri vivono in un pannello laterale destro** (sketch 002), richiudibile, con i
+  soli filtri attivi ripetuti come pastiglie accanto al conteggio dei risultati. La
+  sidebar sinistra resta navigazione e stato; i log escono verso Grafana come voce
+  esterna.
+
 ## Sketches
 
 | # | Name | Design Question | Winner | Tags |
 |---|------|----------------|--------|------|
 | 001 | result-shape | Che forma ha un risultato di ricerca? | **B** scheda raggruppata | risultato, densità, locandina |
-| 002 | shell-and-search | Dove vivono guscio, ricerca e filtri? | — | layout, sidebar, ricerca |
+| 002 | shell-and-search | Dove vivono guscio, ricerca e filtri? | **B** pannello laterale | layout, sidebar, ricerca |
 | 003 | library-state | Come si legge "ce l'ho già" e come lo filtro? | — | plex, stato, filtri |
 | 004 | service-surfaces | Le superfici di servizio parlano la stessa lingua? | — | revisione, admin, sezioni |

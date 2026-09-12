@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketch 002 — Guscio, ricerca e filtri</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-void);
+    color: var(--color-text);
+    padding-top: 52px;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1;
+    background: var(--color-bg), var(--ambient);
+  }
+
+  #variant-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: rgba(11, 14, 23, 0.72);
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    border-bottom: 1px solid var(--edge);
+  }
+  #variant-nav .label {
+    font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--color-text-muted); margin-right: var(--space-2);
+  }
+  .variant-tab {
+    font-family: inherit; font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-4); border-radius: var(--radius-full);
+    border: 1px solid transparent; background: transparent; color: var(--color-text-dim);
+    cursor: pointer; transition: all var(--dur) var(--ease);
+  }
+  .variant-tab:hover { background: var(--glass-2); color: var(--color-text); }
+  .variant-tab.active {
+    background: var(--glass-3); color: var(--color-text); border-color: var(--edge-strong);
+  }
+  .variant { display: none; }
+  .variant.active { display: block; }
+
+  /* ═══════════ guscio condiviso: sidebar + area di lavoro ═══════════ */
+  .shell { display: flex; min-height: calc(100vh - 52px); }
+
+  .sidebar {
+    width: 232px; flex-shrink: 0;
+    display: flex; flex-direction: column;
+    padding: var(--space-5) var(--space-3);
+    background: var(--glass-1);
+    backdrop-filter: blur(var(--glass-blur));
+    border-right: 1px solid var(--edge);
+  }
+  .brand {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: 0 var(--space-3) var(--space-5);
+  }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--color-primary), #a05aff);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: var(--text-sm); color: #04121c;
+    box-shadow: 0 4px 14px rgba(76, 194, 255, 0.3);
+  }
+  .brand-name { font-size: var(--text-sm); font-weight: 600; letter-spacing: -0.01em; }
+  .brand-sub { font-size: var(--text-2xs); color: var(--color-text-muted); }
+
+  .nav-group { display: flex; flex-direction: column; gap: 2px; }
+  .nav-group + .nav-group { margin-top: var(--space-5); }
+  .nav-label {
+    font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--color-text-muted); padding: 0 var(--space-3) var(--space-2);
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm); color: var(--color-text-dim);
+    text-decoration: none; cursor: pointer;
+    border: 1px solid transparent;
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .nav-item:hover { background: var(--glass-2); color: var(--color-text); }
+  .nav-item.active {
+    background: var(--glass-3); color: var(--color-text);
+    border-color: var(--edge-strong);
+  }
+  .nav-item .ico { width: 16px; text-align: center; opacity: 0.75; }
+  .nav-item .count {
+    margin-left: auto; font-size: var(--text-2xs); font-family: var(--font-mono);
+    color: var(--color-text-muted);
+  }
+  .nav-item .count.warn { color: var(--color-warn); }
+  .nav-item .ext { margin-left: auto; font-size: var(--text-2xs); color: var(--color-text-muted); }
+
+  .sidebar-foot { margin-top: auto; padding: var(--space-4) var(--space-3) 0; }
+  .status-line {
+    display: flex; align-items: center; gap: var(--space-2);
+    font-size: var(--text-2xs); color: var(--color-text-muted);
+    padding: var(--space-1) 0;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: var(--radius-full);
+    background: var(--color-owned); box-shadow: 0 0 8px var(--color-owned);
+  }
+  .status-dot.idle { background: var(--color-text-muted); box-shadow: none; }
+
+  .work { flex: 1; min-width: 0; padding: var(--space-6) var(--space-8) var(--space-12); }
+  .work-narrow { max-width: 980px; }
+
+  /* ═══════════ ricerca ═══════════ */
+  .searchbar {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--glass-2);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    transition: all var(--dur) var(--ease);
+  }
+  .searchbar:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-glow);
+  }
+  .searchbar .ico { color: var(--color-text-muted); font-size: var(--text-lg); }
+  .searchbar input {
+    flex: 1; min-width: 0; background: none; border: none; outline: none;
+    color: var(--color-text); font-family: inherit; font-size: var(--text-lg);
+  }
+  .searchbar input::placeholder { color: var(--color-text-muted); font-size: var(--text-base); }
+  .kbd {
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--color-text-muted);
+    border: 1px solid var(--edge); border-radius: var(--radius-sm);
+    padding: 3px 6px; white-space: nowrap;
+  }
+  .divider-v { width: 1px; align-self: stretch; background: var(--edge); }
+
+  /* controlli filtro condivisi */
+  .control {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 10px; border-radius: var(--radius-md);
+    background: var(--glass-2); border: 1px solid var(--edge);
+    color: var(--color-text-dim); font-size: var(--text-sm);
+    cursor: pointer; font-family: inherit;
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .control:hover { background: var(--glass-3); color: var(--color-text); border-color: var(--edge-strong); }
+  .control.on {
+    background: var(--color-primary-dim); border-color: var(--color-primary);
+    color: var(--color-text);
+  }
+  .control .caret { font-size: 9px; opacity: 0.6; }
+  .control-label { font-size: var(--text-2xs); color: var(--color-text-muted); }
+
+  .filter-row {
+    display: flex; align-items: center; gap: var(--space-2);
+    flex-wrap: wrap; margin-top: var(--space-3);
+  }
+
+  .result-count {
+    font-size: var(--text-sm); color: var(--color-text-muted);
+    margin: var(--space-5) 0 var(--space-3);
+    display: flex; align-items: center; gap: var(--space-3);
+  }
+  .result-count b { color: var(--color-text-dim); font-weight: 600; }
+
+  /* ═══════════ scheda film (vincitrice sketch 001) ═══════════ */
+  .cards { display: flex; flex-direction: column; gap: var(--space-3); }
+  .card {
+    position: relative; display: flex; gap: var(--space-4); padding: var(--space-4);
+    background: var(--glass-1); backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge); border-radius: var(--radius-lg);
+    transition: all var(--dur) var(--ease);
+  }
+  .card:hover {
+    background: var(--glass-2); border-color: var(--edge-strong);
+    box-shadow: var(--shadow-md); transform: translateY(-1px);
+  }
+  .card.owned { border-left: 2px solid var(--color-owned); }
+  .poster {
+    display: block; object-fit: cover; flex-shrink: 0;
+    width: 76px; height: 114px;
+    background: linear-gradient(160deg, #1b2033, #0d1019);
+    border-radius: var(--radius-sm); border: 1px solid var(--edge);
+  }
+  .poster-empty {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--color-text-muted); font-size: var(--text-2xs); text-align: center;
+  }
+  .card-main { flex: 1; min-width: 0; }
+  .card-head { display: flex; align-items: flex-start; gap: var(--space-4); }
+  .card-title { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+  .card-title .year { color: var(--color-text-muted); font-weight: 400; }
+  .card-dir { font-size: var(--text-sm); color: var(--color-text-dim); margin-top: 3px; }
+  .card-badges { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
+  .rating { display: inline-flex; align-items: baseline; gap: 5px; font-variant-numeric: tabular-nums; }
+  .rating .value { font-size: var(--text-base); font-weight: 650; color: var(--color-rating); }
+  .rating.tmdb .value { color: var(--color-rating-tmdb); }
+  .rating .src { font-size: var(--text-2xs); font-weight: 600; color: var(--color-text-muted); }
+  .owned-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: var(--text-2xs); font-weight: 600;
+    padding: 4px 9px 4px 7px; border-radius: var(--radius-full);
+    background: var(--color-owned-dim); border: 1px solid rgba(61, 220, 151, 0.35);
+    color: var(--color-owned);
+  }
+  .releases { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: var(--space-3); }
+  .release {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-2xs); font-family: var(--font-mono);
+    padding: 5px 9px; border-radius: var(--radius-sm);
+    background: var(--glass-2); border: 1px solid var(--edge);
+    color: var(--color-text-dim); cursor: pointer;
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .release:hover { background: var(--color-primary-dim); border-color: var(--color-primary); color: var(--color-text); }
+  .release .q { color: var(--color-text); font-weight: 600; }
+
+  /* il post orfano: nessun match TMDB, quindi niente film su cui raggruppare */
+  .card.orphan {
+    border-style: dashed;
+    background: transparent;
+  }
+  .card.orphan .card-title { font-size: var(--text-base); font-weight: 500; }
+  .orphan-tag {
+    font-size: var(--text-2xs); color: var(--color-text-muted);
+    border: 1px dashed var(--edge-strong); border-radius: var(--radius-sm);
+    padding: 3px 7px;
+  }
+
+  /* ═══════════ A — filtri sempre visibili sotto la ricerca ═══════════ */
+
+  /* ═══════════ B — pannello filtri a destra ═══════════ */
+  .with-panel { display: flex; gap: var(--space-6); align-items: flex-start; }
+  .panel {
+    width: 248px; flex-shrink: 0; position: sticky; top: 76px;
+    padding: var(--space-4);
+    background: var(--glass-1); backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge); border-radius: var(--radius-lg);
+  }
+  .panel h3 {
+    font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--color-text-muted); font-weight: 600; margin-bottom: var(--space-3);
+  }
+  .panel-group + .panel-group { margin-top: var(--space-5); }
+  .panel-opt {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 5px var(--space-2); border-radius: var(--radius-sm);
+    font-size: var(--text-sm); color: var(--color-text-dim); cursor: pointer;
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .panel-opt:hover { background: var(--glass-2); color: var(--color-text); }
+  .panel-opt.on { color: var(--color-text); }
+  .panel-opt .mark {
+    width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0;
+    border: 1px solid var(--edge-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #04121c;
+  }
+  .panel-opt.on .mark { background: var(--color-primary); border-color: var(--color-primary); }
+  .panel-opt .n { margin-left: auto; font-size: var(--text-2xs); font-family: var(--font-mono); color: var(--color-text-muted); }
+  .slider { width: 100%; accent-color: var(--color-primary); margin-top: var(--space-2); }
+
+  .active-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .active-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-2xs); padding: 4px 6px 4px 9px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary-dim); border: 1px solid var(--color-primary);
+    color: var(--color-text);
+  }
+  .active-chip button {
+    background: none; border: none; color: var(--color-text-dim);
+    cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px;
+  }
+  .active-chip button:hover { color: var(--color-text); }
+
+  /* ═══════════ C — token dentro la barra ═══════════ */
+  .token-bar {
+    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+    padding: var(--space-3) var(--space-4);
+    background: var(--glass-2); backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    cursor: text;
+  }
+  .token-bar:focus-within { border-color: var(--color-primary); box-shadow: var(--shadow-glow); }
+  .token {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-sm); font-family: var(--font-mono);
+    padding: 4px 6px 4px 9px; border-radius: var(--radius-sm);
+    background: var(--glass-3); border: 1px solid var(--edge-strong);
+    color: var(--color-text); white-space: nowrap;
+  }
+  .token .k { color: var(--color-primary); }
+  .token button { background: none; border: none; color: var(--color-text-muted); cursor: pointer; font-size: 13px; line-height: 1; }
+  .token button:hover { color: var(--color-text); }
+  .token-input {
+    flex: 1; min-width: 140px; background: none; border: none; outline: none;
+    color: var(--color-text); font-family: inherit; font-size: var(--text-lg);
+  }
+  .suggest {
+    margin-top: var(--space-2);
+    background: rgba(17, 21, 36, 0.94);
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    border: 1px solid var(--edge-strong); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .suggest-item {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm); color: var(--color-text-dim); cursor: pointer;
+  }
+  .suggest-item:hover, .suggest-item.sel { background: var(--color-primary-dim); color: var(--color-text); }
+  .suggest-item .k { font-family: var(--font-mono); color: var(--color-primary); min-width: 92px; }
+  .suggest-item .d { font-size: var(--text-2xs); color: var(--color-text-muted); margin-left: auto; }
+
+  .note {
+    font-size: var(--text-xs); color: var(--color-text-muted);
+    border-left: 2px solid var(--edge-strong); padding-left: var(--space-3);
+    margin: var(--space-4) 0; line-height: 1.6;
+  }
+
+  /* ─── attrezzi ─── */
+  #sketch-tools {
+    position: fixed; bottom: 12px; right: 12px; z-index: 9999;
+    font-family: system-ui; font-size: 12px;
+    background: rgba(0,0,0,0.78); backdrop-filter: blur(12px);
+    color: #fff; padding: 10px 12px; border-radius: 10px;
+    opacity: 0.35; transition: opacity 0.2s;
+    display: flex; flex-direction: column; gap: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  #sketch-tools:hover { opacity: 1; }
+  #sketch-tools .tool-row { display: flex; align-items: center; gap: 6px; }
+  #sketch-tools label { color: #999; font-size: 11px; min-width: 54px; }
+  #sketch-tools select, #sketch-tools button {
+    font-family: inherit; font-size: 11px;
+    background: rgba(255,255,255,0.1); color: #fff;
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 5px;
+    padding: 3px 7px; cursor: pointer;
+  }
+  #sketch-tools button.on { background: var(--color-primary); color: #04121c; border-color: transparent; }
+  body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filter: none !important; }
+  body.no-glass .card, body.no-glass .sidebar, body.no-glass .panel { background: var(--color-bg-elevated); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    z-index: 9999; padding: var(--space-3) var(--space-5);
+    background: rgba(17,21,36,0.92); backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge-strong); border-radius: var(--radius-full);
+    font-size: var(--text-sm); box-shadow: var(--shadow-lg);
+    opacity: 0; transition: all var(--dur) var(--ease);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 860px) {
+    .sidebar { display: none; }
+    .panel { display: none; }
+    .work { padding: var(--space-4); }
+  }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="label">Sketch 002 · guscio e ricerca</span>
+  <button class="variant-tab active" onclick="showVariant('a', this)">A · Filtri a vista</button>
+  <button class="variant-tab" onclick="showVariant('b', this)">B · Pannello laterale ★</button>
+  <button class="variant-tab" onclick="showVariant('c', this)">C · Token nella barra</button>
+</div>
+
+<!-- ═══════════ A ═══════════ -->
+<div id="variant-a" class="variant active">
+  <div class="shell">
+    <aside class="sidebar" id="sb-a"></aside>
+    <main class="work work-narrow">
+      <div class="searchbar">
+        <span class="ico">⌕</span>
+        <input placeholder="Cerca un titolo…" value="avengers" id="q-a">
+        <div class="divider-v"></div>
+        <input placeholder="Regista" style="max-width:150px;font-size:var(--text-base)">
+        <span class="kbd">⌘K</span>
+      </div>
+
+      <div class="filter-row">
+        <button class="control" onclick="cycleMode(this)">Contiene <span class="caret">▾</span></button>
+        <button class="control" onclick="toggleControl(this)">Tutte le sezioni <span class="caret">▾</span></button>
+        <button class="control" onclick="toggleControl(this)">Voto <span class="caret">▾</span></button>
+        <button class="control" onclick="toggleControl(this)">Qualità <span class="caret">▾</span></button>
+        <button class="control on" onclick="toggleControl(this)">◍ Nascondi ciò che ho</button>
+        <button class="control" onclick="toggleControl(this)">Eliminati</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <span class="control-label">Ordina</span>
+          <button class="control" onclick="toggleControl(this)">Voto ↓ <span class="caret">▾</span></button>
+        </div>
+      </div>
+
+      <div class="note">
+        Tutti i filtri sempre a vista: nulla è nascosto, ma la riga è lunga e su schermo
+        stretto va a capo. È il percorso di minor resistenza per Flask — sono una form GET.
+      </div>
+
+      <div class="result-count"><b>6</b> film · 21 post · <span style="color:var(--color-owned)">2 già in libreria nascosti</span></div>
+      <div class="cards" id="cards-a"></div>
+    </main>
+  </div>
+</div>
+
+<!-- ═══════════ B ═══════════ -->
+<div id="variant-b" class="variant">
+  <div class="shell">
+    <aside class="sidebar" id="sb-b"></aside>
+    <main class="work">
+      <div class="with-panel">
+        <div style="flex:1;min-width:0">
+          <div class="searchbar">
+            <span class="ico">⌕</span>
+            <input placeholder="Cerca un titolo…" value="avengers">
+            <div class="divider-v"></div>
+            <input placeholder="Regista" style="max-width:150px;font-size:var(--text-base)">
+            <span class="kbd">⌘K</span>
+          </div>
+
+          <div class="result-count">
+            <b>6</b> film · 21 post
+            <div class="active-chips">
+              <span class="active-chip">voto ≥ 7 <button onclick="dropChip(this)">×</button></span>
+              <span class="active-chip">non in libreria <button onclick="dropChip(this)">×</button></span>
+            </div>
+          </div>
+
+          <div class="note">
+            I filtri stanno in un pannello dedicato e i soli attivi risalgono come pastiglie
+            accanto al conteggio. Area risultati più stretta, ma i filtri hanno spazio per
+            crescere — e quando arriva Plex ne arrivano altri.
+          </div>
+
+          <div class="cards" id="cards-b"></div>
+        </div>
+
+        <aside class="panel">
+          <div class="panel-group">
+            <h3>Libreria</h3>
+            <div class="panel-opt" onclick="pickOne(this)"><span class="mark"></span> Tutti <span class="n">6</span></div>
+            <div class="panel-opt on" onclick="pickOne(this)"><span class="mark">✓</span> Non in libreria <span class="n">4</span></div>
+            <div class="panel-opt" onclick="pickOne(this)"><span class="mark"></span> Già in libreria <span class="n">2</span></div>
+          </div>
+          <div class="panel-group">
+            <h3>Voto minimo</h3>
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font-size:var(--text-xl);font-weight:650;color:var(--color-rating)">7.0</span>
+              <span style="font-size:var(--text-2xs);color:var(--color-text-muted)">e oltre</span>
+            </div>
+            <input type="range" class="slider" min="0" max="10" step="0.5" value="7"
+                   oninput="this.previousElementSibling.firstElementChild.textContent=(+this.value).toFixed(1)">
+          </div>
+          <div class="panel-group">
+            <h3>Sezione</h3>
+            <div class="panel-opt on" onclick="toggleOpt(this)"><span class="mark">✓</span> Movie <span class="n">45.567</span></div>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> Series <span class="n">15.008</span></div>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> Documentari <span class="n">1.689</span></div>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> Animazione <span class="n">3.909</span></div>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> Anime <span class="n">1.541</span></div>
+          </div>
+          <div class="panel-group">
+            <h3>Qualità</h3>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> 4K / 2160p <span class="n">1.204</span></div>
+            <div class="panel-opt on" onclick="toggleOpt(this)"><span class="mark">✓</span> 1080p <span class="n">12.880</span></div>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> 720p <span class="n">9.455</span></div>
+            <div class="panel-opt" onclick="toggleOpt(this)"><span class="mark"></span> DVD <span class="n">18.702</span></div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ═══════════ C ═══════════ -->
+<div id="variant-c" class="variant">
+  <div class="shell">
+    <aside class="sidebar" id="sb-c"></aside>
+    <main class="work work-narrow">
+      <div class="token-bar" onclick="document.getElementById('tok-input').focus()">
+        <span class="token"><span class="k">voto:</span>≥7 <button onclick="dropToken(event, this)">×</button></span>
+        <span class="token"><span class="k">libreria:</span>no <button onclick="dropToken(event, this)">×</button></span>
+        <input class="token-input" id="tok-input" placeholder="avengers" value="avengers"
+               oninput="showSuggest(this.value)" onfocus="showSuggest(this.value)">
+        <span class="kbd">⌘K</span>
+      </div>
+
+      <div class="suggest" id="suggest">
+        <div class="suggest-item sel"><span class="k">sezione:</span> Movie, Series, Anime… <span class="d">↵</span></div>
+        <div class="suggest-item"><span class="k">qualità:</span> 1080p, 4K, DVD… <span class="d">↵</span></div>
+        <div class="suggest-item"><span class="k">regista:</span> nome o cognome <span class="d">↵</span></div>
+        <div class="suggest-item"><span class="k">anno:</span> 1995, 1990-1999 <span class="d">↵</span></div>
+        <div class="suggest-item"><span class="k">modo:</span> inizia, finisce, parole <span class="d">↵</span></div>
+        <div class="suggest-item"><span class="k">eliminati:</span> mostra <span class="d">↵</span></div>
+      </div>
+
+      <div class="note">
+        Un solo campo per tutto: i filtri diventano token digitabili, con suggerimenti sotto.
+        Velocissimo se sai cosa vuoi, opaco se non lo sai — e i filtri attivi si leggono solo
+        leggendo la barra. Le lingue e l'ordinamento diventano token anche loro.
+      </div>
+
+      <div class="result-count"><b>6</b> film · 21 post</div>
+      <div class="cards" id="cards-c"></div>
+    </main>
+  </div>
+</div>
+
+<div id="sketch-tools">
+  <div class="tool-row">
+    <label>Tema</label>
+    <select onchange="document.querySelector('link[href*=themes]').href='../themes/'+this.value+'.css'">
+      <option value="default">default</option>
+    </select>
+  </div>
+  <div class="tool-row">
+    <label>Vetro</label>
+    <button class="on" onclick="toggleGlass(this)">acceso</button>
+  </div>
+  <div class="tool-row">
+    <label>Larghezza</label>
+    <button onclick="setWidth(760, this)">760</button>
+    <button onclick="setWidth(1100, this)">1100</button>
+    <button class="on" onclick="setWidth(0, this)">full</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const POSTER = 'https://image.tmdb.org/t/p/w185';
+
+/* Voci di navigazione: i conteggi sono quelli veri del database. */
+const NAV = `
+  <div class="brand">
+    <div class="brand-mark">DD</div>
+    <div>
+      <div class="brand-name">DDUnlimited</div>
+      <div class="brand-sub">67.714 titoli</div>
+    </div>
+  </div>
+  <div class="nav-group">
+    <div class="nav-item active"><span class="ico">⌕</span> Ricerca</div>
+    <div class="nav-item"><span class="ico">▦</span> Sezioni <span class="count">10</span></div>
+    <div class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="count">—</span></div>
+  </div>
+  <div class="nav-group">
+    <div class="nav-label">Manutenzione</div>
+    <div class="nav-item"><span class="ico">◎</span> Abbinamenti <span class="count warn">234</span></div>
+    <div class="nav-item"><span class="ico">⚠</span> Dati mancanti <span class="count">16.862</span></div>
+    <div class="nav-item"><span class="ico">⚙</span> Amministrazione</div>
+    <div class="nav-item"><span class="ico">↗</span> Log su Grafana <span class="ext">esterno</span></div>
+  </div>
+  <div class="sidebar-foot">
+    <div class="status-line"><span class="status-dot"></span> Sessione attiva</div>
+    <div class="status-line"><span class="status-dot"></span> Import: 1 giorno fa</div>
+    <div class="status-line"><span class="status-dot idle"></span> Plex non collegato</div>
+    <div class="status-line" style="color:var(--color-rating-tmdb)">Voti: 9.786 / 67.714</div>
+  </div>`;
+
+const FILMS = [
+  { t: 'Avengers: Infinity War', y: 2018, d: 'F.lli Russo', s: 'Movie', p: '/t24aimjQLa0dyoZQEbSws7XK1U0.jpg',
+    tmdb: 8.2, owned: true, rel: [['1080p','ITA·ENG'],['720p','ITA·ENG'],['2160p','ENG'],['DVD','ITA'],['WEB','ITA']] },
+  { t: 'Avengers: Endgame', y: 2019, d: 'F.lli Russo', s: 'Movie', p: '/hj1xaEUGMiUxaFYoutlljtlkHSG.jpg',
+    tmdb: 8.2, owned: false, rel: [['2160p','ENG'],['1080p','ENG'],['720p','ENG'],['DVD','ITA·ENG']] },
+  { t: 'Captain America: Civil War', y: 2016, d: 'f.lli Russo', s: 'Movie', p: '/zV6uLEHFFjrGBAogwU9CoHSmPPY.jpg',
+    tmdb: 7.5, owned: false, rel: [['1080p','ITA·ENG'],['720p','ITA·ENG'],['DVD','ITA'],['WEB','ITA']] },
+  { t: 'Doctor Strange nel Multiverso della Follia', y: 2022, d: 'Raimi', s: 'Movie', p: '/fh62tD1EuavkTpEgVA7U4V7d2Yj.jpg',
+    tmdb: 7.2, owned: false, rel: [['2160p','ITA·ENG'],['1080p','ITA·ENG'],['720p','ITA·ENG']] },
+  { t: 'Eternals', y: 2021, d: 'Zhao', s: 'Movie', p: '/753WHOCaelFNYtUlcYZtNDhD9ZC.jpg',
+    tmdb: 6.8, owned: false, rel: [['2160p','ENG'],['1080p','ENG'],['720p','ITA·ENG']] },
+  { orphan: true, t: 'AVENGERS GRIMM - LA VENDETTA (Cole, 2015) [WEB, Mux]', y: 2015, d: 'Cole', s: 'Movie',
+    rel: [['WEB','ITA']] },
+];
+
+function cardHTML(f) {
+  if (f.orphan) {
+    return `
+      <div class="card orphan">
+        <div class="poster poster-empty">NO<br>ART</div>
+        <div class="card-main">
+          <div class="card-head">
+            <div style="min-width:0">
+              <div class="card-title">${f.t}</div>
+              <div class="card-dir">${f.s} · nessuna scheda TMDB</div>
+            </div>
+            <div class="card-badges"><span class="orphan-tag">non abbinato</span></div>
+          </div>
+          <div class="releases">${f.rel.map(relHTML).join('')}</div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card ${f.owned ? 'owned' : ''}">
+      <img class="poster" src="${POSTER}${f.p}" alt="" loading="lazy">
+      <div class="card-main">
+        <div class="card-head">
+          <div style="min-width:0">
+            <div class="card-title">${f.t} <span class="year">${f.y}</span></div>
+            <div class="card-dir">${f.d} · ${f.s}</div>
+          </div>
+          <div class="card-badges">
+            ${f.owned ? '<span class="owned-badge">✓ ce l\'hai</span>' : ''}
+            <span class="rating tmdb"><span class="value">${f.tmdb.toFixed(1)}</span><span class="src">TMDB</span></span>
+          </div>
+        </div>
+        <div class="releases">${f.rel.map(relHTML).join('')}</div>
+      </div>
+    </div>`;
+}
+
+function relHTML(r) {
+  return `<span class="release" onclick="showToast('Apro il post ${r[0]}')">
+    <span class="q">${r[0]}</span><span>${r[1]}</span></span>`;
+}
+
+/* La variante A nasconde davvero ciò che è già in libreria: il filtro è acceso. */
+function render() {
+  document.getElementById('cards-a').innerHTML = FILMS.filter(f => !f.owned).map(cardHTML).join('');
+  document.getElementById('cards-b').innerHTML = FILMS.map(cardHTML).join('');
+  document.getElementById('cards-c').innerHTML = FILMS.filter(f => !f.owned).map(cardHTML).join('');
+  ['sb-a', 'sb-b', 'sb-c'].forEach(id => document.getElementById(id).innerHTML = NAV);
+}
+
+const MODES = ['Contiene', 'Inizia con', 'Finisce con', 'Tutte le parole'];
+let modeIdx = 0;
+function cycleMode(btn) {
+  modeIdx = (modeIdx + 1) % MODES.length;
+  btn.innerHTML = MODES[modeIdx] + ' <span class="caret">▾</span>';
+  showToast('Modalità: ' + MODES[modeIdx]);
+}
+function toggleControl(btn) { btn.classList.toggle('on'); }
+function toggleOpt(el) { el.classList.toggle('on'); el.querySelector('.mark').textContent = el.classList.contains('on') ? '✓' : ''; }
+function pickOne(el) {
+  el.parentElement.querySelectorAll('.panel-opt').forEach(o => {
+    o.classList.remove('on'); o.querySelector('.mark').textContent = '';
+  });
+  el.classList.add('on'); el.querySelector('.mark').textContent = '✓';
+}
+function dropChip(btn) { btn.parentElement.remove(); showToast('Filtro rimosso'); }
+function dropToken(e, btn) { e.stopPropagation(); btn.parentElement.remove(); showToast('Token rimosso'); }
+function showSuggest(v) {
+  document.getElementById('suggest').style.display = v.includes(':') || v === '' ? 'block' : 'block';
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1500);
+}
+function showVariant(id, btn) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+function toggleGlass(btn) {
+  const off = document.body.classList.toggle('no-glass');
+  btn.textContent = off ? 'spento' : 'acceso';
+  btn.classList.toggle('on', !off);
+}
+function setWidth(px, btn) {
+  document.querySelectorAll('.work').forEach(w => w.style.maxWidth = px ? px + 'px' : '');
+  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+
+render();
+</script>
+</body>
+</html>
