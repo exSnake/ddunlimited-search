@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import threading
+from datetime import datetime
 from flask import Flask, jsonify, render_template, request, url_for
 from werkzeug.serving import WSGIRequestHandler
 
@@ -104,6 +105,62 @@ def v2_langs(value: str) -> str:
     return '·'.join(parts[:3])
 
 
+def _ago(value) -> str:
+    """Human distance in Italian, coarse on purpose: the sidebar wants a feel."""
+    if not value:
+        return 'mai'
+    try:
+        when = datetime.fromisoformat(str(value).replace('Z', ''))
+    except ValueError:
+        return str(value)
+    seconds = (datetime.now() - when).total_seconds()
+    if seconds < 3600:
+        return f'{int(seconds // 60)} minuti fa'
+    if seconds < 86400:
+        hours = int(seconds // 3600)
+        return '1 ora fa' if hours == 1 else f'{hours} ore fa'
+    days = int(seconds // 86400)
+    return 'ieri' if days == 1 else f'{days} giorni fa'
+
+
+def v2_shell() -> dict:
+    """Sidebar context: the counts on the nav and the system status at the foot."""
+    stats = database.get_stats()
+    ratings_stats = database.get_rating_stats()
+    last_import = database.get_last_import()
+    session = session_store.status()
+    _, missing = database.get_titles_with_missing_data(per_page=1)
+
+    rated = ratings_stats['matched']
+    session_state = session.get('state', 'missing')
+    session_label = {
+        'ok': 'Sessione attiva',
+        'expiring': 'Sessione in scadenza',
+        'expired': 'Sessione scaduta',
+        'missing': 'Sessione assente',
+    }.get(session_state, 'Sessione sconosciuta')
+
+    return {
+        'stats': stats,
+        'nav_counts': {
+            'sections': stats['total_sections'],
+            'review': ratings_stats['low_confidence'],
+            'missing': missing,
+        },
+        'status_lines': [
+            {'label': session_label, 'ok': session_state == 'ok',
+             'warn': session_state in ('expiring', 'expired')},
+            {'label': f"Import: {_ago(last_import.get('completed_at') or last_import.get('started_at')) if last_import else 'mai'}",
+             'ok': bool(last_import), 'warn': False},
+            {'label': 'Plex non collegato', 'ok': False, 'warn': False},
+        ],
+        'ratings_progress': {
+            'done': rated,
+            'total': stats['total_titles'],
+        },
+    }
+
+
 @app.route('/v2')
 def v2_search():
     """Search page, v2. Renders server-side; the filter panel is a GET form."""
@@ -130,8 +187,8 @@ def v2_search():
                       min_rating=min_rating, sections=sections, qualities=qualities)
         groups, total = database.search_titles_grouped(
             page=page, per_page=V2_PER_PAGE, sort=sort, **common)
-        total_posts = sum(len(g['posts']) for g in groups)
         facets = database.get_search_facets(**common)
+        total_posts = facets['total_posts']
 
     params = [('q', q), ('director', director),
               ('search_type', search_type), ('sort', sort)]
@@ -168,10 +225,10 @@ def v2_search():
         min_rating=min_rating, page=page, pages=pages, groups=groups,
         total=total, total_posts=total_posts, searched=searched,
         sections=sections, qualities=qualities, facets=facets,
-        stats=database.get_stats(), search_types=V2_SEARCH_TYPES,
-        sorts=V2_SORTS, active_chips=chips,
+        search_types=V2_SEARCH_TYPES, sorts=V2_SORTS, active_chips=chips,
         page_url=lambda n: url_for(
             'v2_search', **_multi(params + [('page', n)])),
+        **v2_shell(),
     )
 
 

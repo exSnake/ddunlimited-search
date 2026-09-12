@@ -11,8 +11,11 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-name">DDUnlimited</div>
-      <div class="brand-sub">{{ "{:,}".format(stats.total_titles).replace(",", ".") }} titoli</div>
+      <div class="brand-mark">DD</div>
+      <div>
+        <div class="brand-name">DDUnlimited</div>
+        <div class="brand-sub">{{ "{:,}".format(stats.total_titles).replace(",", ".") }} titoli</div>
+      </div>
     </div>
 
     <nav class="nav-group">
@@ -20,23 +23,35 @@
         <span class="ico">⌕</span> Ricerca
       </a>
       <a class="nav-item" href="/sections">
-        <span class="ico">▦</span> Sezioni <span class="count">{{ stats.total_sections }}</span>
+        <span class="ico">▦</span> Sezioni <span class="count">{{ nav_counts.sections }}</span>
       </a>
-      <span class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="ext">presto</span></span>
+      <span class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="count">—</span></span>
     </nav>
 
     <nav class="nav-group">
       <div class="nav-label">Manutenzione</div>
-      <a class="nav-item" href="/ratings"><span class="ico">◎</span> Abbinamenti</a>
-      <a class="nav-item" href="/sections/missing-data"><span class="ico">⚠</span> Dati mancanti</a>
+      <a class="nav-item" href="/ratings">
+        <span class="ico">◎</span> Abbinamenti
+        {% if nav_counts.review %}<span class="count warn">{{ "{:,}".format(nav_counts.review).replace(",", ".") }}</span>{% endif %}
+      </a>
+      <a class="nav-item" href="/sections/missing-data">
+        <span class="ico">⚠</span> Dati mancanti
+        <span class="count">{{ "{:,}".format(nav_counts.missing).replace(",", ".") }}</span>
+      </a>
       <a class="nav-item" href="/admin"><span class="ico">⚙</span> Amministrazione</a>
     </nav>
 
     <div class="sidebar-foot">
-      {% block sidebar_foot %}
-      <div>Interfaccia <b>v2</b></div>
-      <div>La v1 resta su <b>/</b></div>
-      {% endblock %}
+      {% for line in status_lines %}
+        <div class="status-line">
+          <span class="status-dot {% if not line.ok %}idle{% endif %} {% if line.warn %}warn{% endif %}"></span>
+          {{ line.label }}
+        </div>
+      {% endfor %}
+      <div class="status-line rating">
+        Voti: {{ "{:,}".format(ratings_progress.done).replace(",", ".") }}
+        / {{ "{:,}".format(ratings_progress.total).replace(",", ".") }}
+      </div>
     </div>
   </aside>
 
@@ -46,20 +61,12 @@
 </div>
 
 <script>
-  // L'interruttore del vetro: backdrop-filter su una pagina piena di locandine
-  // è il costo da misurare sul vero, non da stimare.
-  (function () {
-    var key = 'ddu-v2-no-glass';
-    if (localStorage.getItem(key) === '1') document.body.classList.add('no-glass');
-    document.addEventListener('change', function (e) {
-      if (e.target.id !== 'glass-toggle') return;
-      var off = !e.target.checked;
-      document.body.classList.toggle('no-glass', off);
-      localStorage.setItem(key, off ? '1' : '0');
-    });
-    var box = document.getElementById('glass-toggle');
-    if (box) box.checked = !document.body.classList.contains('no-glass');
-  })();
+  // I filtri sono una form GET e restano usabili senza questo: qui si toglie
+  // solo il giro in più del bottone.
+  document.addEventListener('change', function (e) {
+    var form = e.target.closest('form[data-autosubmit]');
+    if (form && e.target.type !== 'range') form.submit();
+  });
 </script>
 </body>
 </html>

@@ -676,7 +676,19 @@ def get_search_facets(
         for k, n in sorted(quality_counts.items()) if k not in seen
     ]
 
-    return {'sections': section_facets, 'qualities': quality_facets}
+    base_query, params = _build_search_filter(
+        query, section, search_type, director, include_deleted, min_rating,
+        sections, qualities
+    )
+    total_posts = 0
+    if "1=0" not in base_query:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) {base_query}", params)
+            total_posts = cursor.fetchone()[0]
+
+    return {'sections': section_facets, 'qualities': quality_facets,
+            'total_posts': total_posts}
 
 
 def _new_group(key: str, post: dict) -> dict:

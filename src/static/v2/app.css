@@ -31,26 +31,44 @@ body.no-glass * { backdrop-filter: none !important; }
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
   padding: var(--space-5) var(--space-3);
   background: var(--glass-1);
   backdrop-filter: blur(var(--glass-blur));
   border-right: 1px solid var(--edge);
 }
 
-.brand { padding: 0 var(--space-3); }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-5);
+}
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: linear-gradient(140deg, var(--color-primary), #a05aff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: #04121c;
+  box-shadow: 0 4px 14px rgba(76, 194, 255, 0.3);
+}
 .brand-name {
-  font-size: var(--text-lg);
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .brand-sub {
   font-size: var(--text-2xs);
-  font-family: var(--font-mono);
   color: var(--color-text-muted);
 }
 
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group + .nav-group { margin-top: var(--space-5); }
 .nav-label {
   padding: 0 var(--space-3) var(--space-2);
   font-size: var(--text-2xs);
@@ -77,7 +95,7 @@ body.no-glass * { backdrop-filter: none !important; }
   color: var(--color-text);
   border-color: var(--edge-strong);
 }
-.nav-item .ico { width: 1em; text-align: center; opacity: 0.75; }
+.nav-item .ico { width: 16px; text-align: center; opacity: 0.75; }
 .nav-item .count {
   margin-left: auto;
   font-family: var(--font-mono);
@@ -92,17 +110,31 @@ body.no-glass * { backdrop-filter: none !important; }
   color: var(--color-text-muted);
 }
 
+.nav-item .count.warn { color: var(--color-warn); }
+
 .sidebar-foot {
   margin-top: auto;
-  padding: var(--space-3);
+  padding: var(--space-4) var(--space-3) 0;
+}
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
   font-size: var(--text-2xs);
   color: var(--color-text-muted);
-  border-top: 1px solid var(--edge);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
 }
-.sidebar-foot b { color: var(--color-text-dim); font-weight: 600; }
+.status-line.rating { color: var(--color-rating-tmdb); }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-owned);
+  box-shadow: 0 0 8px var(--color-owned);
+}
+.status-dot.idle { background: var(--color-text-muted); box-shadow: none; }
+.status-dot.warn { background: var(--color-warn); box-shadow: 0 0 8px var(--color-warn); }
 
 /* ── Area di lavoro ─────────────────────────────────────────────── */
 
@@ -165,6 +197,45 @@ body.no-glass * { backdrop-filter: none !important; }
   transition: all var(--dur-fast) var(--ease);
 }
 .searchbar button:hover { background: rgba(76, 194, 255, 0.28); }
+
+/* le quattro modalità e l'ordine: sotto la barra, non nel pannello */
+.searchopts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2) 0;
+}
+.opt-label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  margin-right: var(--space-1);
+}
+.opt-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--edge);
+  margin: 0 var(--space-3);
+}
+.opt {
+  font-size: var(--text-2xs);
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+.opt:hover { color: var(--color-text); background: var(--glass-2); }
+.opt.on {
+  color: var(--color-text);
+  background: var(--glass-3);
+  border-color: var(--edge-strong);
+}
+.opt input { position: absolute; opacity: 0; pointer-events: none; }
 
 .resultbar {
   display: flex;
@@ -379,9 +450,6 @@ body.no-glass * { backdrop-filter: none !important; }
   backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
 }
 .panel h3 {
   margin: 0 0 var(--space-3);
@@ -392,8 +460,9 @@ body.no-glass * { backdrop-filter: none !important; }
   font-weight: 600;
 }
 .panel-group { display: flex; flex-direction: column; gap: 2px; }
+.panel-group + .panel-group { margin-top: var(--space-5); }
 .panel-note {
-  margin: calc(var(--space-2) * -1) 0 var(--space-2);
+  padding: var(--space-2) var(--space-2) 0;
   font-size: var(--text-2xs);
   color: var(--color-text-muted);
 }
@@ -402,21 +471,35 @@ body.no-glass * { backdrop-filter: none !important; }
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--color-text-dim);
   cursor: pointer;
   transition: all var(--dur-fast) var(--ease);
 }
 .panel-opt:hover { background: var(--glass-2); color: var(--color-text); }
-.panel-opt.on {
-  background: var(--glass-3);
-  border-color: var(--edge-strong);
-  color: var(--color-text);
+.panel-opt.on { color: var(--color-text); }
+
+/* il quadratino è disegnato: il controllo nativo non sta nel tema */
+.panel-opt .mark {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1px solid var(--edge-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #04121c;
+  transition: all var(--dur-fast) var(--ease);
 }
-.panel-opt input { accent-color: var(--color-primary); margin: 0; }
+.panel-opt.on .mark {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.panel-opt input { position: absolute; opacity: 0; pointer-events: none; }
 .panel-opt .n {
   margin-left: auto;
   font-family: var(--font-mono);
