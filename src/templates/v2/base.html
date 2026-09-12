@@ -61,59 +61,101 @@
 </div>
 
 <script>
-  // I filtri sono form GET e restano usabili senza niente di tutto questo:
-  // qui si toglie solo il giro in più del bottone.
-  document.addEventListener('change', function (e) {
-    var form = e.target.closest('form[data-autosubmit]');
-    if (form && e.target.type !== 'range') form.submit();
-  });
-
-  // Ricerca mentre si scrive. Si chiede al server la stessa pagina e se ne
-  // scambiano due pezzi: il cursore resta dov'è e il markup lo fa sempre Jinja.
+  // Ogni controllo resta una form GET e funziona senza niente di tutto questo.
+  // Qui si toglie solo il ricaricamento: si chiede al server la stessa pagina e
+  // se ne scambiano due pezzi, così il markup continua a farlo Jinja.
   (function () {
     var form = document.querySelector('form[data-live]');
-    if (!form || !window.fetch || !window.DOMParser) return;
+    if (!form || !window.fetch || !window.DOMParser || !window.AbortController) return;
 
     var REGIONS = ['results-region', 'panel-region'];
     var timer = null, pending = null;
 
-    function urlFor() {
-      var data = new URLSearchParams(new FormData(form));
-      data.delete('page');
-      return form.action + '?' + data.toString();
+    function params() {
+      var p = new URLSearchParams(location.search);
+      p.delete('page');
+      p.set('q', form.q.value);
+      p.set('director', form.director.value);
+      document.querySelectorAll('.control[data-cycle]').forEach(function (b) {
+        p.set(b.name, b.dataset.current);
+      });
+      return p;
     }
 
-    function swap(url) {
-      if (pending) pending.abort();
-      pending = new AbortController();
+    function panelParams() {
+      var p = params(), panel = document.querySelector('#panel-region form');
+      if (!panel) return p;
+      ['section', 'quality', 'min_rating'].forEach(function (k) { p.delete(k); });
+      new FormData(panel).forEach(function (v, k) {
+        if (k === 'section' || k === 'quality') p.append(k, v);
+        else if (k === 'min_rating' && +v > 0) p.set(k, v);
+      });
+      return p;
+    }
+
+    function swap(p, delay) {
+      clearTimeout(timer);
       document.body.classList.add('is-searching');
-      fetch(url, {signal: pending.signal, headers: {'X-Partial': '1'}})
-        .then(function (r) { return r.text(); })
-        .then(function (html) {
-          var doc = new DOMParser().parseFromString(html, 'text/html');
-          REGIONS.forEach(function (id) {
-            var next = doc.getElementById(id), now = document.getElementById(id);
-            if (next && now) now.replaceWith(next);
+      timer = setTimeout(function () {
+        var url = form.action + '?' + p.toString();
+        if (pending) pending.abort();
+        pending = new AbortController();
+        fetch(url, {signal: pending.signal})
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            REGIONS.forEach(function (id) {
+              var next = doc.getElementById(id), now = document.getElementById(id);
+              if (next && now) now.replaceWith(next);
+            });
+            history.replaceState(null, '', url);
+            document.body.classList.remove('is-searching');
+          })
+          .catch(function (err) {
+            if (err.name === 'AbortError') return;
+            document.body.classList.remove('is-searching');
+            location.href = url;
           });
-          history.replaceState(null, '', url);
-          document.body.classList.remove('is-searching');
-        })
-        .catch(function (err) {
-          if (err.name !== 'AbortError') { document.body.classList.remove('is-searching'); form.submit(); }
-        });
+      }, delay);
     }
 
     form.addEventListener('input', function (e) {
-      if (e.target.type !== 'search') return;
-      clearTimeout(timer);
-      timer = setTimeout(function () { swap(urlFor()); }, 300);
+      if (e.target.type === 'search') swap(params(), 300);
+    });
+    form.addEventListener('submit', function (e) { e.preventDefault(); swap(params(), 0); });
+
+    // I bottoni a ciclo: l'etichetta cambia subito, la richiesta aspetta che tu
+    // abbia finito di cliccare — tre click per arrivare in fondo sono una ricerca.
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.control[data-cycle]');
+      if (!btn) return;
+      e.preventDefault();
+      var options = JSON.parse(btn.dataset.cycle);
+      var i = options.findIndex(function (o) { return o[0] === btn.dataset.current; });
+      var next = options[(i + 1) % options.length];
+      btn.dataset.current = next[0];
+      btn.value = options[(i + 2) % options.length][0];
+      btn.querySelector('.control-value').textContent = next[1];
+      swap(params(), 450);
     });
 
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      clearTimeout(timer);
-      swap(urlFor());
+    // Il pannello: stessa strada, senza il giro del ricaricamento.
+    document.addEventListener('change', function (e) {
+      if (!e.target.closest('#panel-region form')) return;
+      swap(panelParams(), e.target.type === 'range' ? 400 : 0);
     });
+
+    // ⌘K / Ctrl+K riporta il fuoco nella barra da qualunque punto: è l'azione
+    // che conta, e non deve costare un viaggio al mouse.
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        form.q.focus();
+        form.q.select();
+      }
+    });
+    var hint = document.querySelector('[data-kbd]');
+    if (hint && !/Mac|iPhone|iPad/.test(navigator.platform)) hint.textContent = 'Ctrl K';
   })();
 </script>
 </body>

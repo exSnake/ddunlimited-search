@@ -191,6 +191,17 @@ body.no-glass * { backdrop-filter: none !important; }
   align-self: stretch;
   background: var(--edge);
 }
+.kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  white-space: nowrap;
+  user-select: none;
+}
+
 .searchbar button {
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
@@ -245,6 +256,8 @@ body.no-glass * { backdrop-filter: none !important; }
 
 /* la ricerca mentre si scrive: si smorza, non si svuota */
 body.is-searching #results-region { opacity: 0.55; transition: opacity var(--dur) var(--ease); }
+/* il bottone appena cliccato resta acceso finché la richiesta non parte */
+body.is-searching .control:focus { border-color: var(--color-primary); color: var(--color-text); }
 
 .resultbar {
   display: flex;
