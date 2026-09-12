@@ -11,10 +11,36 @@
       <input type="search" name="q" value="{{ q }}" placeholder="Cerca un titolo" autofocus>
       <span class="sep"></span>
       <input type="search" name="director" class="director" value="{{ director }}" placeholder="Regista">
-      {% for name, value in carried %}
-        <input type="hidden" name="{{ name }}" value="{{ value }}">
-      {% endfor %}
+      {% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}
+      {% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}
+      {% if min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
+      <input type="hidden" name="search_type" value="{{ search_type }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
       <button type="submit">Cerca</button>
+    </form>
+
+    <form class="searchopts" method="get" action="{{ url_for('v2_search') }}" data-autosubmit>
+      <input type="hidden" name="q" value="{{ q }}">
+      <input type="hidden" name="director" value="{{ director }}">
+      {% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}
+      {% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}
+      {% if min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
+
+      <span class="opt-label">Cerca</span>
+      {% for value, label in search_types %}
+        <label class="opt {% if value == search_type %}on{% endif %}">
+          <input type="radio" name="search_type" value="{{ value }}"
+                 {% if value == search_type %}checked{% endif %}>{{ label|lower }}
+        </label>
+      {% endfor %}
+      <span class="opt-sep"></span>
+      <span class="opt-label">Ordina</span>
+      {% for value, label in sorts %}
+        <label class="opt {% if value == sort %}on{% endif %}">
+          <input type="radio" name="sort" value="{{ value }}"
+                 {% if value == sort %}checked{% endif %}>{{ label|lower }}
+        </label>
+      {% endfor %}
     </form>
 
     {% if searched %}
@@ -103,19 +129,20 @@
   </div>
 
   <aside class="panel">
-    <form method="get" action="{{ url_for('v2_search') }}">
+    <form method="get" action="{{ url_for('v2_search') }}" data-autosubmit>
       <input type="hidden" name="q" value="{{ q }}">
       <input type="hidden" name="director" value="{{ director }}">
+      <input type="hidden" name="search_type" value="{{ search_type }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
 
       <div class="panel-group">
         <h3>Libreria</h3>
-        <div class="panel-note">Plex non è ancora collegato.</div>
         {% for label in ['Tutti', 'Non in libreria', 'Già in libreria'] %}
-          <label class="panel-opt disabled">
-            <input type="radio" disabled {% if loop.first %}checked{% endif %}>
-            <span>{{ label }}</span>
-          </label>
+          <span class="panel-opt disabled">
+            <span class="mark">{% if loop.first %}✓{% endif %}</span>{{ label }}
+          </span>
         {% endfor %}
+        <div class="panel-note">Plex non è ancora collegato.</div>
       </div>
 
       <div class="panel-group">
@@ -127,7 +154,8 @@
         <input type="range" class="slider" name="min_rating" min="0" max="10" step="0.5"
                value="{{ min_rating or 0 }}"
                oninput="document.getElementById('rating-read').textContent =
-                        this.value > 0 ? (+this.value).toFixed(1) : '—'">
+                        this.value > 0 ? (+this.value).toFixed(1) : '—'"
+               onchange="this.form.submit()">
       </div>
 
       {% if facets.sections %}
@@ -137,7 +165,7 @@
           <label class="panel-opt {% if f.key in sections %}on{% endif %}">
             <input type="checkbox" name="section" value="{{ f.key }}"
                    {% if f.key in sections %}checked{% endif %}>
-            <span>{{ f.label }}</span>
+            <span class="mark">{% if f.key in sections %}✓{% endif %}</span>{{ f.label }}
             <span class="n">{{ "{:,}".format(f.count).replace(",", ".") }}</span>
           </label>
         {% endfor %}
@@ -151,41 +179,15 @@
           <label class="panel-opt {% if f.key in qualities %}on{% endif %}">
             <input type="checkbox" name="quality" value="{{ f.key }}"
                    {% if f.key in qualities %}checked{% endif %}>
-            <span>{{ f.label }}</span>
+            <span class="mark">{% if f.key in qualities %}✓{% endif %}</span>{{ f.label }}
             <span class="n">{{ "{:,}".format(f.count).replace(",", ".") }}</span>
           </label>
         {% endfor %}
       </div>
       {% endif %}
 
-      <div class="panel-group">
-        <h3>Come cercare</h3>
-        <div class="field">
-          <select name="search_type">
-            {% for value, label in search_types %}
-              <option value="{{ value }}" {% if value == search_type %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      <div class="panel-group">
-        <h3>Ordine</h3>
-        <div class="field">
-          <select name="sort">
-            {% for value, label in sorts %}
-              <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      <button type="submit">Applica</button>
+      <noscript><button type="submit">Applica</button></noscript>
     </form>
-
-    <label class="glass-toggle">
-      <input type="checkbox" id="glass-toggle" checked> Vetro acceso
-    </label>
   </aside>
 </div>
 {% endblock %}
