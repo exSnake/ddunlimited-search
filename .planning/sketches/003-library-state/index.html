@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketch 003 — Ce l'ho già</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans); background: var(--color-void); color: var(--color-text);
+    padding-top: 52px; -webkit-font-smoothing: antialiased;
+  }
+  body::before { content: ''; position: fixed; inset: 0; z-index: -1; background: var(--color-bg), var(--ambient); }
+
+  #variant-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: rgba(11,14,23,0.72); backdrop-filter: blur(var(--glass-blur-heavy));
+    border-bottom: 1px solid var(--edge);
+  }
+  #variant-nav .label {
+    font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--color-text-muted); margin-right: var(--space-2);
+  }
+  .variant-tab {
+    font-family: inherit; font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-4); border-radius: var(--radius-full);
+    border: 1px solid transparent; background: transparent; color: var(--color-text-dim);
+    cursor: pointer; transition: all var(--dur) var(--ease);
+  }
+  .variant-tab:hover { background: var(--glass-2); color: var(--color-text); }
+  .variant-tab.active { background: var(--glass-3); color: var(--color-text); border-color: var(--edge-strong); }
+  .variant { display: none; }
+  .variant.active { display: block; }
+
+  .stage { max-width: 1000px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-12); }
+  .stage-head h1 { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.02em; }
+  .stage-head p { color: var(--color-text-dim); font-size: var(--text-sm); margin-top: var(--space-2); }
+  .note {
+    font-size: var(--text-xs); color: var(--color-text-muted);
+    border-left: 2px solid var(--edge-strong); padding-left: var(--space-3);
+    margin: var(--space-4) 0; line-height: 1.6;
+  }
+  .note b { color: var(--color-text-dim); }
+
+  .lib-filter {
+    display: inline-flex; padding: 3px; gap: 2px;
+    background: var(--glass-1); border: 1px solid var(--edge); border-radius: var(--radius-md);
+  }
+  .lib-filter button {
+    font-family: inherit; font-size: var(--text-sm);
+    padding: 6px 12px; border-radius: var(--radius-sm);
+    border: 1px solid transparent; background: transparent;
+    color: var(--color-text-dim); cursor: pointer;
+    transition: all var(--dur-fast) var(--ease);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .lib-filter button:hover { color: var(--color-text); background: var(--glass-2); }
+  .lib-filter button.on { background: var(--glass-3); color: var(--color-text); border-color: var(--edge-strong); }
+  .lib-filter .n { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--color-text-muted); }
+
+  .filter-line {
+    display: flex; align-items: center; gap: var(--space-3);
+    flex-wrap: wrap; margin: var(--space-4) 0 var(--space-2);
+  }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: var(--text-sm); color: var(--color-text-dim);
+    padding: 6px 11px; border-radius: var(--radius-md);
+    background: var(--glass-1); border: 1px solid var(--edge);
+    cursor: pointer; transition: all var(--dur-fast) var(--ease);
+  }
+  .toggle:hover { color: var(--color-text); background: var(--glass-2); }
+  .toggle.on { background: var(--color-primary-dim); border-color: var(--color-primary); color: var(--color-text); }
+  .toggle .mark {
+    width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0;
+    border: 1px solid var(--edge-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #04121c;
+  }
+  .toggle.on .mark { background: var(--color-primary); border-color: var(--color-primary); }
+
+  .result-count { font-size: var(--text-sm); color: var(--color-text-muted); margin: var(--space-3) 0; }
+  .result-count b { color: var(--color-text-dim); font-weight: 600; }
+
+  /* ═══════════ scheda ═══════════ */
+  .cards { display: flex; flex-direction: column; gap: var(--space-3); }
+  .card {
+    position: relative; display: flex; gap: var(--space-4); padding: var(--space-4);
+    background: var(--glass-1); backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge); border-radius: var(--radius-lg);
+    transition: all var(--dur) var(--ease);
+  }
+  .card:hover { background: var(--glass-2); border-color: var(--edge-strong); box-shadow: var(--shadow-md); }
+  .card.owned { border-left: 2px solid var(--color-owned); }
+  .card.dimmed { opacity: 0.62; }
+  .card.dimmed:hover { opacity: 1; }
+  .poster {
+    display: block; object-fit: cover; flex-shrink: 0; width: 76px; height: 114px;
+    background: linear-gradient(160deg,#1b2033,#0d1019);
+    border-radius: var(--radius-sm); border: 1px solid var(--edge);
+  }
+  .poster-empty { display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); font-size: var(--text-2xs); text-align: center; }
+  .card-main { flex: 1; min-width: 0; }
+  .card-head { display: flex; align-items: flex-start; gap: var(--space-4); }
+  .card-title { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+  .card-title .year { color: var(--color-text-muted); font-weight: 400; }
+  .card-dir { font-size: var(--text-sm); color: var(--color-text-dim); margin-top: 3px; }
+  .card-badges { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
+  .rating { display: inline-flex; align-items: baseline; gap: 5px; font-variant-numeric: tabular-nums; }
+  .rating .value { font-size: var(--text-base); font-weight: 650; color: var(--color-rating); }
+  .rating.tmdb .value { color: var(--color-rating-tmdb); }
+  .rating .src { font-size: var(--text-2xs); font-weight: 600; color: var(--color-text-muted); }
+
+  .releases { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: var(--space-3); }
+  .release {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-2xs); font-family: var(--font-mono);
+    padding: 5px 9px; border-radius: var(--radius-sm);
+    background: var(--glass-2); border: 1px solid var(--edge);
+    color: var(--color-text-dim); cursor: pointer;
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .release:hover { background: var(--color-primary-dim); border-color: var(--color-primary); color: var(--color-text); }
+  .release .q { color: var(--color-text); font-weight: 600; }
+
+  /* la release che corrisponde alla tua copia: constatazione, non valutazione */
+  .release.mine {
+    border-color: rgba(61,220,151,0.4); background: var(--color-owned-dim); color: var(--color-owned);
+  }
+  .release.mine .q { color: var(--color-owned); }
+  .release.mine::after { content: 'la tua'; font-size: 9px; opacity: 0.8; letter-spacing: 0.04em; }
+
+  /* variante D: quello che non hai prende il blu dell'interazione, non l'ambra dell'allarme */
+  .release.available { border-color: rgba(76,194,255,0.45); background: var(--color-primary-dim); color: var(--color-text); }
+  .release.available .q { color: var(--color-primary); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: var(--text-2xs); font-weight: 600;
+    padding: 4px 10px 4px 8px; border-radius: var(--radius-full);
+    white-space: nowrap;
+  }
+  .badge-owned { background: var(--color-owned-dim); border: 1px solid rgba(61,220,151,0.35); color: var(--color-owned); }
+  .badge-owned .q { font-family: var(--font-mono); font-weight: 700; }
+  .badge-unknown { background: transparent; border: 1px dashed var(--edge-strong); color: var(--color-text-muted); font-weight: 400; }
+
+  /* la riga neutra: dice cosa c'è, non cosa fare */
+  .also-line {
+    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+    margin-top: var(--space-3); padding-top: var(--space-3);
+    border-top: 1px dashed var(--edge);
+    font-size: var(--text-2xs); color: var(--color-text-muted);
+  }
+  .also-line .q {
+    font-family: var(--font-mono); color: var(--color-text-dim);
+    border: 1px solid var(--edge); border-radius: var(--radius-sm); padding: 2px 6px;
+  }
+
+  body.plex-off .badge-owned, body.plex-off .also-line,
+  body.plex-off .release.mine, body.plex-off .release.available { display: none; }
+  body.plex-off .card.owned { border-left: 1px solid var(--edge); }
+  body.plex-off .card.dimmed { opacity: 1; }
+  body:not(.plex-off) .badge-unknown.only-off { display: none; }
+  body.plex-off .lib-filter, body.plex-off .toggle { opacity: 0.4; pointer-events: none; }
+  .plex-banner { display: none; }
+  body.plex-off .plex-banner {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4); margin: var(--space-4) 0;
+    background: var(--glass-1); border: 1px dashed var(--edge-strong);
+    border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--color-text-dim);
+  }
+  .plex-banner button {
+    margin-left: auto; font-family: inherit; font-size: var(--text-sm);
+    padding: 5px 12px; border-radius: var(--radius-md);
+    background: var(--color-primary); border: none; color: #04121c;
+    font-weight: 600; cursor: pointer;
+  }
+
+  #sketch-tools {
+    position: fixed; bottom: 12px; right: 12px; z-index: 9999;
+    font-family: system-ui; font-size: 12px;
+    background: rgba(0,0,0,0.78); backdrop-filter: blur(12px);
+    color: #fff; padding: 10px 12px; border-radius: 10px;
+    opacity: 0.35; transition: opacity 0.2s;
+    display: flex; flex-direction: column; gap: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  #sketch-tools:hover { opacity: 1; }
+  #sketch-tools .tool-row { display: flex; align-items: center; gap: 6px; }
+  #sketch-tools label { color: #999; font-size: 11px; min-width: 60px; }
+  #sketch-tools select, #sketch-tools button {
+    font-family: inherit; font-size: 11px;
+    background: rgba(255,255,255,0.1); color: #fff;
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 5px;
+    padding: 3px 7px; cursor: pointer;
+  }
+  #sketch-tools button.on { background: var(--color-primary); color: #04121c; border-color: transparent; }
+  body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filter: none !important; }
+  body.no-glass .card { background: var(--color-bg-elevated); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    z-index: 9999; padding: var(--space-3) var(--space-5);
+    background: rgba(17,21,36,0.92); backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--edge-strong); border-radius: var(--radius-full);
+    font-size: var(--text-sm); box-shadow: var(--shadow-lg);
+    opacity: 0; transition: all var(--dur) var(--ease);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="label">Sketch 003 · ce l'ho già</span>
+  <button class="variant-tab active" onclick="showVariant('a', this)">A · Solo il fatto</button>
+  <button class="variant-tab" onclick="showVariant('b', this)">B · Sussurro</button>
+  <button class="variant-tab" onclick="showVariant('c', this)">C · Voce normale</button>
+  <button class="variant-tab" onclick="showVariant('d', this)">D · Indicazione attiva ★</button>
+</div>
+
+<div id="stages"></div>
+
+<div id="sketch-tools">
+  <div class="tool-row">
+    <label>Tema</label>
+    <select onchange="document.querySelector('link[href*=themes]').href='../themes/'+this.value+'.css'">
+      <option value="default">default</option>
+    </select>
+  </div>
+  <div class="tool-row"><label>Vetro</label><button class="on" onclick="toggleGlass(this)">acceso</button></div>
+  <div class="tool-row"><label>Plex</label><button class="on" onclick="togglePlex(this)">collegato</button></div>
+  <div class="tool-row"><label>Posseduti</label><button class="on" onclick="toggleDim(this)">smorzati</button></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const POSTER = 'https://image.tmdb.org/t/p/w185';
+/* Scala di qualità provvisoria: nel database le sigle sono scritte in modi diversi
+   (720p/720P, 4K/2160P) e vanno normalizzate prima di poterle confrontare. */
+const RANK = { 'DVD': 1, 'SD': 1, 'HDTV': 2, 'WEB': 3, '720p': 3, '1080p': 4, 'BluRay': 4, '2160p': 5, '4K': 5 };
+
+/* Film e release dal database vero. `have` è inventato: è la forma del dato che
+   Plex restituirà — la risoluzione della copia che possiedi. */
+const FILMS = [
+  { t: 'Avatar', y: 2009, d: 'Cameron', p: '/cu6CTvQqVvaTUmWNGWydpf7EzmV.jpg', tmdb: 7.6,
+    have: '720p',
+    rel: [['2160p','ENG'],['1080p','ITA·ENG'],['720p','ITA·ENG'],['DVD','ITA'],['WEB','ITA']] },
+  { t: 'Avengers: Infinity War', y: 2018, d: 'F.lli Russo', p: '/t24aimjQLa0dyoZQEbSws7XK1U0.jpg', tmdb: 8.2,
+    have: '2160p',
+    rel: [['2160p','ENG'],['1080p','ENG'],['720p','ITA·ENG'],['DVD','ITA·ENG']] },
+  { t: 'Agente 007 - Thunderball - Operazione tuono', y: 1965, d: 'Young', p: '/9kaZ0ScKoWXqKrvbPc7dkaedJBP.jpg',
+    imdb: 6.9, have: 'DVD',
+    rel: [['1080p','ITA·ENG'],['DVD','ITA'],['SD','ITA']] },
+  { t: 'Eternals', y: 2021, d: 'Zhao', p: '/753WHOCaelFNYtUlcYZtNDhD9ZC.jpg', tmdb: 6.8, have: null,
+    rel: [['2160p','ENG'],['1080p','ENG'],['720p','ITA·ENG']] },
+  { t: 'Doctor Strange nel Multiverso della Follia', y: 2022, d: 'Raimi', p: '/fh62tD1EuavkTpEgVA7U4V7d2Yj.jpg',
+    tmdb: 7.2, have: null,
+    rel: [['2160p','ITA·ENG'],['1080p','ITA·ENG'],['720p','ITA·ENG']] },
+  { t: '[•REC] : Virus Edition (Balagueró/Plaza, 2007)', y: 2007, d: 'Balagueró/Plaza', p: null,
+    orphan: true, have: undefined, rel: [['DVD','ITA']] },
+];
+
+/* Le risoluzioni presenti sul forum che non sono nella tua copia.
+   Nessun giudizio: è un elenco di cose che esistono. */
+function alsoAvailable(f) {
+  if (!f.have) return [];
+  const mine = RANK[f.have] || 0;
+  const seen = new Set();
+  return f.rel
+    .filter(r => (RANK[r[0]] || 0) > mine)
+    .filter(r => !seen.has(r[0]) && seen.add(r[0]))
+    .map(r => r[0]);
+}
+
+const VARIANTS = {
+  a: { title: 'Solo il fatto',
+       lead: "Il badge dice cosa hai e in che risoluzione. Nient'altro.",
+       note: `Il minimo indispensabile. Che esista una 2160p si legge dalle pastiglie come per
+              ogni altro film: <b>nessuno ti sta dicendo niente</b> sulla tua copia. Se quel
+              720p è una scelta, qui resta una scelta.` },
+  b: { title: 'Sussurro',
+       lead: 'Come A, più la release che corrisponde alla tua, marcata verde.',
+       note: `La tua copia è riconoscibile fra le pastiglie — <b>«la tua»</b> — e le altre
+              restano neutre. Vedi al volo che il 2160p c'è e che non è quello che hai,
+              senza che nessuno lo chiami meglio.` },
+  c: { title: 'Voce normale',
+       lead: 'Come B, più una riga che elenca cosa c\'è sul forum oltre alla tua copia.',
+       note: `La riga dice <b>«sul forum anche 2160p»</b>: un fatto, al passato prossimo di
+              nessuno. Costa una riga in più per scheda ed è l'unica variante che si legge
+              senza guardare le pastiglie.` },
+  d: { title: 'Indicazione attiva',
+       lead: 'Le release che non hai prendono il blu dell\'interazione.',
+       note: `Il blu è il colore con cui l'interfaccia dice <b>«qui puoi cliccare»</b>, non
+              <b>«qui c'è un problema»</b>. Più evidente delle altre: verifica se a te suona
+              come un'informazione o come una spinta.` },
+};
+
+const FILTERS = {};
+const ONLY_OTHER = {};
+
+function stateOf(f) {
+  if (f.have === undefined) return 'unknown';
+  if (f.have === null) return 'missing';
+  return 'owned';
+}
+
+function releaseHTML(r, f, v) {
+  let cls = 'release';
+  if (f.have) {
+    // "la tua" è la release che possiedi davvero, non l'intera fascia di qualità
+    const isMine = r[0] === f.have;
+    const better = (RANK[r[0]] || 0) > (RANK[f.have] || 0);
+    if ((v === 'b' || v === 'c' || v === 'd') && isMine) cls += ' mine';
+    if (v === 'd' && better) cls += ' available';
+  }
+  return `<span class="${cls}" onclick="showToast('Apro il post ${r[0]}')">
+    <span class="q">${r[0]}</span><span>${r[1]}</span></span>`;
+}
+
+function cardHTML(f, v) {
+  const s = stateOf(f);
+  const dim = document.body.classList.contains('dim-owned') && s === 'owned';
+  const also = alsoAvailable(f);
+
+  let badge = '';
+  if (s === 'owned') badge = `<span class="badge badge-owned">✓ ce l'hai in <span class="q">${f.have}</span></span>`;
+  if (s === 'unknown') badge = '<span class="badge badge-unknown">? non abbinato</span>';
+
+  const rating = f.imdb != null
+    ? `<span class="rating"><span class="value">${f.imdb.toFixed(1)}</span><span class="src">IMDb</span></span>`
+    : (f.tmdb != null
+      ? `<span class="rating tmdb"><span class="value">${f.tmdb.toFixed(1)}</span><span class="src">TMDB</span></span>` : '');
+
+  const showAlso = v === 'c' && also.length;
+
+  return `
+    <div class="card ${s === 'owned' ? 'owned' : ''} ${dim ? 'dimmed' : ''}">
+      ${f.p ? `<img class="poster" src="${POSTER}${f.p}" alt="" loading="lazy">`
+            : '<div class="poster poster-empty">NO<br>ART</div>'}
+      <div class="card-main">
+        <div class="card-head">
+          <div style="min-width:0">
+            <div class="card-title">${f.t} ${f.orphan ? '' : `<span class="year">${f.y}</span>`}</div>
+            <div class="card-dir">${f.d}${f.orphan ? ' · nessuna scheda TMDB' : ''}</div>
+          </div>
+          <div class="card-badges">${badge}${rating}</div>
+        </div>
+        <div class="releases">${f.rel.map(r => releaseHTML(r, f, v)).join('')}</div>
+        ${showAlso ? `
+          <div class="also-line">
+            <span>sul forum anche</span>
+            ${also.map(q => `<span class="q">${q}</span>`).join('')}
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function matches(f, mode, onlyOther) {
+  const s = stateOf(f);
+  if (onlyOther && !alsoAvailable(f).length) return false;
+  if (mode === 'missing') return s === 'missing' || s === 'unknown';
+  if (mode === 'owned') return s === 'owned';
+  return true;
+}
+
+function buildStages() {
+  document.getElementById('stages').innerHTML = Object.entries(VARIANTS).map(([v, meta]) => {
+    FILTERS[v] = FILTERS[v] || 'all';
+    return `
+      <div id="variant-${v}" class="variant ${v === 'a' ? 'active' : ''}">
+        <div class="stage">
+          <div class="stage-head">
+            <h1>${meta.title}</h1>
+            <p>${meta.lead}</p>
+          </div>
+          <div class="note">${meta.note}</div>
+          <div class="plex-banner">
+            <span>◌ Plex non è collegato: lo stato della libreria non è disponibile.</span>
+            <button onclick="showToast('Andrei in Amministrazione → Plex')">Collega Plex</button>
+          </div>
+          <div class="filter-line">
+            <div class="lib-filter">
+              <button class="on" onclick="setFilter('${v}','all',this)">Tutti <span class="n">6</span></button>
+              <button onclick="setFilter('${v}','missing',this)">Non in libreria <span class="n">3</span></button>
+              <button onclick="setFilter('${v}','owned',this)">In libreria <span class="n">3</span></button>
+            </div>
+            <span class="toggle" onclick="toggleOther('${v}', this)">
+              <span class="mark"></span> Solo con release che non hai
+            </span>
+          </div>
+          <div class="result-count" id="count-${v}"></div>
+          <div class="cards" id="cards-${v}"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function setFilter(v, mode, btn) {
+  FILTERS[v] = mode;
+  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  render();
+}
+
+function toggleOther(v, el) {
+  ONLY_OTHER[v] = !ONLY_OTHER[v];
+  el.classList.toggle('on', ONLY_OTHER[v]);
+  el.querySelector('.mark').textContent = ONLY_OTHER[v] ? '✓' : '';
+  render();
+}
+
+function render() {
+  Object.keys(VARIANTS).forEach(v => {
+    const list = FILMS.filter(f => matches(f, FILTERS[v], ONLY_OTHER[v]));
+    document.getElementById('cards-' + v).innerHTML = list.map(f => cardHTML(f, v)).join('');
+    const hidden = FILMS.length - list.length;
+    document.getElementById('count-' + v).innerHTML =
+      `<b>${list.length}</b> film` + (hidden ? ` · ${hidden} fuori dal filtro` : '');
+  });
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1500);
+}
+function showVariant(id, btn) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+function toggleGlass(btn) {
+  const off = document.body.classList.toggle('no-glass');
+  btn.textContent = off ? 'spento' : 'acceso';
+  btn.classList.toggle('on', !off);
+}
+function togglePlex(btn) {
+  const off = document.body.classList.toggle('plex-off');
+  btn.textContent = off ? 'scollegato' : 'collegato';
+  btn.classList.toggle('on', !off);
+}
+function toggleDim(btn) {
+  const on = document.body.classList.toggle('dim-owned');
+  btn.textContent = on ? 'smorzati' : 'pieni';
+  btn.classList.toggle('on', on);
+  render();
+}
+
+document.body.classList.add('dim-owned');
+buildStages();
+render();
+</script>
+</body>
+</html>
