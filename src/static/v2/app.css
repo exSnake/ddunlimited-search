@@ -26,11 +26,17 @@ body.no-glass * { backdrop-filter: none !important; }
 
 .shell { display: flex; min-height: 100vh; }
 
+/* Il guscio resta fermo: lo stato in fondo deve leggersi senza scorrere
+   duecento risultati. */
 .sidebar {
   width: 232px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   padding: var(--space-5) var(--space-3);
   background: var(--glass-1);
   backdrop-filter: blur(var(--glass-blur));
