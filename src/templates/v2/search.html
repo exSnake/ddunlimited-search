@@ -2,52 +2,61 @@
 {% set active = 'search' %}
 {% block title %}Ricerca · DDUnlimited{% endblock %}
 
+{# Ogni controllo è una form GET a sé: questa riporta lo stato degli altri,
+   tranne quello che il controllo stesso sta cambiando. #}
+{% macro carry(skip='') %}
+  {% if skip != 'q' %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+  {% if skip != 'director' %}<input type="hidden" name="director" value="{{ director }}">{% endif %}
+  {% if skip != 'search_type' %}<input type="hidden" name="search_type" value="{{ search_type }}">{% endif %}
+  {% if skip != 'sort' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+  {% if skip != 'section' %}{% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}{% endif %}
+  {% if skip != 'quality' %}{% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}{% endif %}
+  {% if skip != 'min_rating' and min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
+{% endmacro %}
+
 {% block work %}
 <div class="with-panel">
   <div class="column">
 
-    <form class="searchbar" method="get" action="{{ url_for('v2_search') }}">
+    <form class="searchbar" method="get" action="{{ url_for('v2_search') }}" data-live>
       <span class="ico">⌕</span>
       <input type="search" name="q" value="{{ q }}" placeholder="Cerca un titolo" autofocus>
       <span class="sep"></span>
       <input type="search" name="director" class="director" value="{{ director }}" placeholder="Regista">
+      <input type="hidden" name="search_type" value="{{ search_type }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
       {% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}
       {% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}
       {% if min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
-      <input type="hidden" name="search_type" value="{{ search_type }}">
-      <input type="hidden" name="sort" value="{{ sort }}">
       <button type="submit">Cerca</button>
     </form>
 
-    <form class="searchopts" method="get" action="{{ url_for('v2_search') }}" data-autosubmit>
-      <input type="hidden" name="q" value="{{ q }}">
-      <input type="hidden" name="director" value="{{ director }}">
-      {% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}
-      {% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}
-      {% if min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
+    {# Due form separate: il bottone porta il valore successivo, e un campo
+       nascosto con lo stesso nome vincerebbe sul bottone. #}
+    <div class="filter-row">
+      <form method="get" action="{{ url_for('v2_search') }}">
+        {{ carry('search_type') }}
+        <button class="control" type="submit" name="search_type" value="{{ next_search_type }}">
+          {{ search_type_label }} <span class="caret">▾</span>
+        </button>
+      </form>
 
-      <span class="opt-label">Cerca</span>
-      {% for value, label in search_types %}
-        <label class="opt {% if value == search_type %}on{% endif %}">
-          <input type="radio" name="search_type" value="{{ value }}"
-                 {% if value == search_type %}checked{% endif %}>{{ label|lower }}
-        </label>
-      {% endfor %}
-      <span class="opt-sep"></span>
-      <span class="opt-label">Ordina</span>
-      {% for value, label in sorts %}
-        <label class="opt {% if value == sort %}on{% endif %}">
-          <input type="radio" name="sort" value="{{ value }}"
-                 {% if value == sort %}checked{% endif %}>{{ label|lower }}
-        </label>
-      {% endfor %}
-    </form>
+      <div class="filter-right">
+        <span class="control-label">Ordina</span>
+        <form method="get" action="{{ url_for('v2_search') }}">
+          {{ carry('sort') }}
+          <button class="control" type="submit" name="sort" value="{{ next_sort }}">
+            {{ sort_label }} <span class="caret">▾</span>
+          </button>
+        </form>
+      </div>
+    </div>
 
-    {% if searched %}
+    <div id="results-region">
       <div class="resultbar">
         <span class="count-label">
-          <b>{{ "{:,}".format(total).replace(",", ".") }}</b>
-          {{ 'film' if total == 1 else 'film' }}
+          {% if browsing and not active_chips %}Ultimi importati:{% endif %}
+          <b>{{ "{:,}".format(total).replace(",", ".") }}</b> film
           {% if total_posts != total %}
             · {{ "{:,}".format(total_posts).replace(",", ".") }} post
           {% endif %}
@@ -114,21 +123,15 @@
       {% if pages > 1 %}
         <div class="pager">
           {% if page > 1 %}<a href="{{ page_url(page - 1) }}">← Precedente</a>{% endif %}
-          <span>{{ page }} di {{ pages }}</span>
+          <span>{{ "{:,}".format(page).replace(",", ".") }} di {{ "{:,}".format(pages).replace(",", ".") }}</span>
           {% if page < pages %}<a href="{{ page_url(page + 1) }}">Successiva →</a>{% endif %}
         </div>
       {% endif %}
-
-    {% else %}
-      <div class="empty">
-        <h2>Cerca un titolo</h2>
-        <p>Un film, una serie, o il nome di un regista.</p>
-      </div>
-    {% endif %}
+    </div>
 
   </div>
 
-  <aside class="panel">
+  <aside class="panel" id="panel-region">
     <form method="get" action="{{ url_for('v2_search') }}" data-autosubmit>
       <input type="hidden" name="q" value="{{ q }}">
       <input type="hidden" name="director" value="{{ director }}">

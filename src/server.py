@@ -95,10 +95,11 @@ V2_SEARCH_TYPES = [
 ]
 
 V2_SORTS = [
+    ('recent', 'Importati di recente'),
     ('title', 'Titolo'),
     ('rating', 'Voto'),
-    ('year', 'Anno, dal più recente'),
-    ('year_asc', 'Anno, dal più vecchio'),
+    ('year', 'Anno ↓'),
+    ('year_asc', 'Anno ↑'),
 ]
 
 V2_PER_PAGE = 30
@@ -173,7 +174,7 @@ def v2_search():
     q = request.args.get('q', '').strip()
     director = request.args.get('director', '').strip()
     search_type = request.args.get('search_type', 'contains').strip()
-    sort = request.args.get('sort', 'title').strip()
+    sort = (request.args.get('sort') or '').strip()
     page = max(request.args.get('page', 1, type=int) or 1, 1)
     min_rating = request.args.get('min_rating', type=float)
     sections = [s for s in request.args.getlist('section') if s.strip()]
@@ -181,18 +182,27 @@ def v2_search():
 
     if search_type not in dict(V2_SEARCH_TYPES):
         search_type = 'contains'
-    if sort not in dict(V2_SORTS):
-        sort = 'title'
     if min_rating is not None and not 0 < min_rating <= 10:
         min_rating = None
 
     searched = bool(q or director)
-    groups, total, total_posts, facets = [], 0, 0, {'sections': [], 'qualities': []}
-    if searched:
-        common = dict(query=q, search_type=search_type, director=director or None,
-                      min_rating=min_rating, sections=sections, qualities=qualities)
-        groups, total = database.search_titles_grouped(
-            page=page, per_page=V2_PER_PAGE, sort=sort, **common)
+    filtered = bool(sections or qualities or min_rating is not None)
+    # With nothing typed the page browses the catalogue newest first, so it
+    # opens on what the last import brought in rather than on an empty frame.
+    browsing = not searched
+    if sort not in dict(V2_SORTS):
+        sort = 'recent' if browsing else 'title'
+
+    common = dict(query=q, search_type=search_type, director=director or None,
+                  min_rating=min_rating, sections=sections, qualities=qualities,
+                  allow_empty=browsing)
+    groups, total = database.search_titles_grouped(
+        page=page, per_page=V2_PER_PAGE, sort=sort, **common)
+
+    if browsing and not filtered:
+        facets = database.get_browse_facets()
+        total_posts = facets['total_posts']
+    else:
         facets = database.get_search_facets(**common)
         total_posts = facets['total_posts']
 
@@ -216,12 +226,6 @@ def v2_search():
     if min_rating is not None:
         chips.append({'label': f'voto ≥ {min_rating:g}',
                       'remove_url': url_without('min_rating')})
-    if search_type != 'contains':
-        chips.append({'label': dict(V2_SEARCH_TYPES)[search_type].lower(),
-                      'remove_url': url_without('search_type')})
-    if sort != 'title':
-        chips.append({'label': dict(V2_SORTS)[sort].lower(),
-                      'remove_url': url_without('sort')})
 
     pages = max((total + V2_PER_PAGE - 1) // V2_PER_PAGE, 1)
 
@@ -229,13 +233,27 @@ def v2_search():
         'v2/search.html',
         q=q, director=director, search_type=search_type, sort=sort,
         min_rating=min_rating, page=page, pages=pages, groups=groups,
-        total=total, total_posts=total_posts, searched=searched,
+        total=total, total_posts=total_posts, browsing=browsing,
         sections=sections, qualities=qualities, facets=facets,
-        search_types=V2_SEARCH_TYPES, sorts=V2_SORTS, active_chips=chips,
+        active_chips=chips,
+        search_type_label=dict(V2_SEARCH_TYPES)[search_type],
+        sort_label=dict(V2_SORTS)[sort],
+        next_search_type=_cycle(V2_SEARCH_TYPES, search_type),
+        next_sort=_cycle(V2_SORTS, sort),
         page_url=lambda n: url_for(
             'v2_search', **_multi(params + [('page', n)])),
         **v2_shell(),
     )
+
+
+def _cycle(options, current):
+    """The value after `current`, wrapping.
+
+    The mode and sort controls are single buttons that step to the next value
+    on click: the button carries the next value, so no JavaScript is involved.
+    """
+    keys = [k for k, _ in options]
+    return keys[(keys.index(current) + 1) % len(keys)] if current in keys else keys[0]
 
 
 def _multi(pairs):
