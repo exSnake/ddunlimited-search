@@ -47,6 +47,11 @@ sul fondo (Plex). Accenti freddi per l'interazione, caldi per i voti, verde per
   (`✓ ce l'hai in 720p`) e le release che mancano prendono il blu dell'interazione, che
   dice "puoi cliccare", non l'ambra che dice "c'è un problema".
 
+- **La revisione è una coda di lavoro, non una lista** (sketch 004): due colonne a
+  confronto, forum a sinistra e TMDB a destra, con i due registi affiancati e in rosso
+  quando divergono. Da tastiera: `J`/`K`, `↵` conferma, `⌫` scarta. Serve una colonna
+  nuova, `matched_director`, che TMDB già restituisce senza richieste aggiuntive.
+
 ## Sketches
 
 | # | Name | Design Question | Winner | Tags |
@@ -54,4 +59,4 @@ sul fondo (Plex). Accenti freddi per l'interazione, caldi per i voti, verde per
 | 001 | result-shape | Che forma ha un risultato di ricerca? | **B** scheda raggruppata | risultato, densità, locandina |
 | 002 | shell-and-search | Dove vivono guscio, ricerca e filtri? | **B** pannello laterale | layout, sidebar, ricerca |
 | 003 | library-state | Come si legge "ce l'ho già" e come lo filtro? | **D** indicazione attiva | plex, stato, filtri, tono |
-| 004 | service-surfaces | Le superfici di servizio parlano la stessa lingua? | — | revisione, admin, sezioni |
+| 004 | service-surfaces | Le superfici di servizio parlano la stessa lingua? | **B** coda di lavoro | revisione, admin, sezioni |
