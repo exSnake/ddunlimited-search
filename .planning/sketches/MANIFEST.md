@@ -52,6 +52,10 @@ sul fondo (Plex). Accenti freddi per l'interazione, caldi per i voti, verde per
   quando divergono. Da tastiera: `J`/`K`, `↵` conferma, `⌫` scarta. Serve una colonna
   nuova, `matched_director`, che TMDB già restituisce senza richieste aggiuntive.
 
+- **Rilascio in parallelo, poi lo scambio.** Le pagine nuove vivono accanto alle attuali
+  finché non sono complete, poi si sposta la rotta e **si cancellano le vecchie**. Nessun
+  momento in cui l'app è a metà.
+
 ## Sketches
 
 | # | Name | Design Question | Winner | Tags |
