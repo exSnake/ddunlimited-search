@@ -381,6 +381,8 @@ def _build_search_filter(
     director: Optional[str],
     include_deleted: bool,
     min_rating: Optional[float],
+    sections: Optional[list] = None,
+    qualities: Optional[list] = None,
 ) -> tuple[str, list]:
     """Build the shared FROM/WHERE clause for the search queries.
 
@@ -425,6 +427,14 @@ def _build_search_filter(
     if section:
         base_query += " AND section = ?"
         params.append(section)
+
+    if sections:
+        base_query += f" AND {SECTION_SQL} IN ({','.join('?' * len(sections))})"
+        params.extend(sections)
+
+    if qualities:
+        base_query += f" AND {QUALITY_SQL} IN ({','.join('?' * len(qualities))})"
+        params.extend(qualities)
 
     if min_rating is not None:
         base_query += f" AND {RATING_SCORE_SQL} >= ?"
@@ -496,6 +506,35 @@ def search_titles(
 
 GROUP_KEY_SQL = "COALESCE('tmdb:' || r.tmdb_id, 'post:' || titles.id)"
 
+# The quality column is written by three different code paths in parser.py, two
+# of which keep the source casing, so '720p'/'720P' and '4K'/'2160P' both mean
+# one thing. Fold them here until the stored values are migrated.
+QUALITY_GROUPS = [
+    ('4K', '4K / 2160p', ('4K', '2160P', 'UHD')),
+    ('1080p', '1080p', ('1080P', '1080I')),
+    ('720p', '720p', ('720P', '720I')),
+    ('BluRay', 'BluRay', ('BLURAY', 'BDRIP', 'BRRIP')),
+    ('WEB', 'WEB', ('WEB', 'WEB-DL', 'WEBDL', 'WEBRIP')),
+    ('HDTV', 'HDTV', ('HDTV',)),
+    ('DVD', 'DVD', ('DVD', 'DVDRIP')),
+    ('SD', 'SD', ('SD',)),
+    ('CAM', 'CAM', ('CAM', 'HDCAM', 'TS', 'TELESYNC')),
+]
+
+QUALITY_SQL = "CASE " + " ".join(
+    "WHEN UPPER(quality) IN ({}) THEN '{}'".format(
+        ",".join(f"'{v}'" for v in variants), key
+    )
+    for key, _, variants in QUALITY_GROUPS
+) + " WHEN quality IS NULL OR quality = '' THEN NULL ELSE UPPER(quality) END"
+
+# Nine sections, but five groups: the forum splits animation by quality and the
+# panel should not.
+SECTION_SQL = ("CASE WHEN section LIKE 'Animazione%' THEN 'Animazione' "
+               "WHEN section LIKE 'Anime%' THEN 'Anime' ELSE section END")
+
+SECTION_ORDER = ['Movie', 'Series', 'Documentari', 'Animazione', 'Anime']
+
 
 def search_titles_grouped(
     query: str,
@@ -506,7 +545,9 @@ def search_titles_grouped(
     director: Optional[str] = None,
     include_deleted: bool = False,
     min_rating: Optional[float] = None,
-    sort: str = "title"
+    sort: str = "title",
+    sections: Optional[list] = None,
+    qualities: Optional[list] = None,
 ) -> tuple[list[dict], int]:
     """Search titles grouped by film rather than by post.
 
@@ -520,11 +561,10 @@ def search_titles_grouped(
         posts (the underlying rows, as returned by search_titles).
     """
     base_query, params = _build_search_filter(
-        query, section, search_type, director, include_deleted, min_rating
+        query, section, search_type, director, include_deleted, min_rating,
+        sections, qualities
     )
 
-    # No criteria: _build_search_filter returns a base query without the join,
-    # so the group key expression would not resolve.
     if "1=0" in base_query:
         return [], 0
 
@@ -581,6 +621,62 @@ def search_titles_grouped(
             group["posts"].append(post)
 
         return [g for g in grouped.values() if g], total
+
+
+def get_search_facets(
+    query: str,
+    section: Optional[str] = None,
+    search_type: str = "contains",
+    director: Optional[str] = None,
+    include_deleted: bool = False,
+    min_rating: Optional[float] = None,
+    sections: Optional[list] = None,
+    qualities: Optional[list] = None,
+) -> dict:
+    """Count films per section and per quality for the current search.
+
+    Each facet is counted with every filter applied except its own, so the
+    numbers answer "what would I get if I also picked this" rather than
+    collapsing to the current selection.
+    """
+    def count_by(expr: str, **overrides) -> dict:
+        kw = dict(sections=sections, qualities=qualities)
+        kw.update(overrides)
+        base_query, params = _build_search_filter(
+            query, section, search_type, director, include_deleted, min_rating,
+            kw['sections'], kw['qualities']
+        )
+        if "1=0" in base_query:
+            return {}
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT {expr} AS k, COUNT(DISTINCT {GROUP_KEY_SQL}) AS n "
+                f"{base_query} GROUP BY k",
+                params
+            )
+            return {row["k"]: row["n"] for row in cursor.fetchall() if row["k"]}
+
+    section_counts = count_by(SECTION_SQL, sections=None)
+    quality_counts = count_by(QUALITY_SQL, qualities=None)
+
+    known = [s for s in SECTION_ORDER if s in section_counts]
+    extra = sorted(k for k in section_counts if k not in SECTION_ORDER)
+    section_facets = [
+        {'key': k, 'label': k, 'count': section_counts[k]} for k in known + extra
+    ]
+
+    quality_facets = [
+        {'key': key, 'label': label, 'count': quality_counts[key]}
+        for key, label, _ in QUALITY_GROUPS if key in quality_counts
+    ]
+    seen = {q['key'] for q in quality_facets}
+    quality_facets += [
+        {'key': k, 'label': k, 'count': n}
+        for k, n in sorted(quality_counts.items()) if k not in seen
+    ]
+
+    return {'sections': section_facets, 'qualities': quality_facets}
 
 
 def _new_group(key: str, post: dict) -> dict:

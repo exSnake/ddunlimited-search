@@ -107,31 +107,58 @@
       <input type="hidden" name="q" value="{{ q }}">
       <input type="hidden" name="director" value="{{ director }}">
 
-      <div>
-        <h3>Sezione</h3>
-        <div class="field">
-          <select name="section">
-            <option value="">Tutte</option>
-            {% for s in sections %}
-              <option value="{{ s }}" {% if s == section %}selected{% endif %}>{{ s }}</option>
-            {% endfor %}
-          </select>
-        </div>
+      <div class="panel-group">
+        <h3>Libreria</h3>
+        <div class="panel-note">Plex non è ancora collegato.</div>
+        {% for label in ['Tutti', 'Non in libreria', 'Già in libreria'] %}
+          <label class="panel-opt disabled">
+            <input type="radio" disabled {% if loop.first %}checked{% endif %}>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
       </div>
 
-      <div>
+      <div class="panel-group">
         <h3>Voto minimo</h3>
-        <div class="field">
-          <select name="min_rating">
-            <option value="">Qualsiasi</option>
-            {% for v in [6, 6.5, 7, 7.5, 8] %}
-              <option value="{{ v }}" {% if min_rating == v %}selected{% endif %}>≥ {{ v }}</option>
-            {% endfor %}
-          </select>
+        <div class="slider-read">
+          <b id="rating-read">{{ "%.1f"|format(min_rating) if min_rating else "—" }}</b>
+          <span>{{ 'e oltre' if min_rating else 'qualsiasi' }}</span>
         </div>
+        <input type="range" class="slider" name="min_rating" min="0" max="10" step="0.5"
+               value="{{ min_rating or 0 }}"
+               oninput="document.getElementById('rating-read').textContent =
+                        this.value > 0 ? (+this.value).toFixed(1) : '—'">
       </div>
 
-      <div>
+      {% if facets.sections %}
+      <div class="panel-group">
+        <h3>Sezione</h3>
+        {% for f in facets.sections %}
+          <label class="panel-opt {% if f.key in sections %}on{% endif %}">
+            <input type="checkbox" name="section" value="{{ f.key }}"
+                   {% if f.key in sections %}checked{% endif %}>
+            <span>{{ f.label }}</span>
+            <span class="n">{{ "{:,}".format(f.count).replace(",", ".") }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if facets.qualities %}
+      <div class="panel-group">
+        <h3>Qualità</h3>
+        {% for f in facets.qualities %}
+          <label class="panel-opt {% if f.key in qualities %}on{% endif %}">
+            <input type="checkbox" name="quality" value="{{ f.key }}"
+                   {% if f.key in qualities %}checked{% endif %}>
+            <span>{{ f.label }}</span>
+            <span class="n">{{ "{:,}".format(f.count).replace(",", ".") }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="panel-group">
         <h3>Come cercare</h3>
         <div class="field">
           <select name="search_type">
@@ -142,7 +169,7 @@
         </div>
       </div>
 
-      <div>
+      <div class="panel-group">
         <h3>Ordine</h3>
         <div class="field">
           <select name="sort">

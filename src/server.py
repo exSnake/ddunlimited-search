@@ -109,63 +109,83 @@ def v2_search():
     """Search page, v2. Renders server-side; the filter panel is a GET form."""
     q = request.args.get('q', '').strip()
     director = request.args.get('director', '').strip()
-    section = request.args.get('section', '').strip()
     search_type = request.args.get('search_type', 'contains').strip()
     sort = request.args.get('sort', 'title').strip()
     page = max(request.args.get('page', 1, type=int) or 1, 1)
     min_rating = request.args.get('min_rating', type=float)
+    sections = [s for s in request.args.getlist('section') if s.strip()]
+    qualities = [s for s in request.args.getlist('quality') if s.strip()]
 
     if search_type not in dict(V2_SEARCH_TYPES):
         search_type = 'contains'
     if sort not in dict(V2_SORTS):
         sort = 'title'
-    if min_rating is not None and not 0 <= min_rating <= 10:
+    if min_rating is not None and not 0 < min_rating <= 10:
         min_rating = None
 
     searched = bool(q or director)
-    groups, total, total_posts = [], 0, 0
+    groups, total, total_posts, facets = [], 0, 0, {'sections': [], 'qualities': []}
     if searched:
+        common = dict(query=q, search_type=search_type, director=director or None,
+                      min_rating=min_rating, sections=sections, qualities=qualities)
         groups, total = database.search_titles_grouped(
-            query=q, section=section or None, page=page, per_page=V2_PER_PAGE,
-            search_type=search_type, director=director or None,
-            min_rating=min_rating, sort=sort,
-        )
+            page=page, per_page=V2_PER_PAGE, sort=sort, **common)
         total_posts = sum(len(g['posts']) for g in groups)
+        facets = database.get_search_facets(**common)
 
-    params = {'q': q, 'director': director, 'section': section,
-              'search_type': search_type, 'sort': sort}
+    params = [('q', q), ('director', director),
+              ('search_type', search_type), ('sort', sort)]
+    params += [('section', s) for s in sections]
+    params += [('quality', s) for s in qualities]
     if min_rating is not None:
-        params['min_rating'] = min_rating
+        params.append(('min_rating', min_rating))
 
-    def url_without(name):
-        rest = {k: v for k, v in params.items() if k != name and v}
-        return url_for('v2_search', **rest)
+    def url_without(name, value=None):
+        rest = [(k, v) for k, v in params
+                if v and not (k == name and (value is None or v == value))]
+        return url_for('v2_search', **_multi(rest))
 
     chips = []
-    if section:
-        chips.append({'label': section, 'remove_url': url_without('section')})
+    for s in sections:
+        chips.append({'label': s, 'remove_url': url_without('section', s)})
+    for s in qualities:
+        chips.append({'label': s, 'remove_url': url_without('quality', s)})
     if min_rating is not None:
-        chips.append({'label': f'voto ≥ {min_rating:g}', 'remove_url': url_without('min_rating')})
+        chips.append({'label': f'voto ≥ {min_rating:g}',
+                      'remove_url': url_without('min_rating')})
     if search_type != 'contains':
         chips.append({'label': dict(V2_SEARCH_TYPES)[search_type].lower(),
                       'remove_url': url_without('search_type')})
     if sort != 'title':
-        chips.append({'label': dict(V2_SORTS)[sort].lower(), 'remove_url': url_without('sort')})
+        chips.append({'label': dict(V2_SORTS)[sort].lower(),
+                      'remove_url': url_without('sort')})
 
     pages = max((total + V2_PER_PAGE - 1) // V2_PER_PAGE, 1)
 
     return render_template(
         'v2/search.html',
-        q=q, director=director, section=section, search_type=search_type,
-        sort=sort, min_rating=min_rating, page=page, pages=pages,
-        groups=groups, total=total, total_posts=total_posts, searched=searched,
-        sections=database.get_all_sections(), stats=database.get_stats(),
-        search_types=V2_SEARCH_TYPES, sorts=V2_SORTS, active_chips=chips,
-        carried=[(k, v) for k, v in params.items()
-                 if k not in ('q', 'director') and v],
-        page_url=lambda n: url_for('v2_search', page=n,
-                                   **{k: v for k, v in params.items() if v}),
+        q=q, director=director, search_type=search_type, sort=sort,
+        min_rating=min_rating, page=page, pages=pages, groups=groups,
+        total=total, total_posts=total_posts, searched=searched,
+        sections=sections, qualities=qualities, facets=facets,
+        stats=database.get_stats(), search_types=V2_SEARCH_TYPES,
+        sorts=V2_SORTS, active_chips=chips,
+        page_url=lambda n: url_for(
+            'v2_search', **_multi(params + [('page', n)])),
     )
+
+
+def _multi(pairs):
+    """Collapse (key, value) pairs into url_for kwargs, keeping repeats as lists."""
+    out = {}
+    for k, v in pairs:
+        if not v:
+            continue
+        if k in out:
+            out[k] = (out[k] if isinstance(out[k], list) else [out[k]]) + [v]
+        else:
+            out[k] = v
+    return out
 
 
 @app.route('/api/search')
