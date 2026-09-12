@@ -374,6 +374,65 @@ def delete_title(url: str) -> bool:
         return cursor.rowcount > 0
 
 
+def _build_search_filter(
+    query: str,
+    section: Optional[str],
+    search_type: str,
+    director: Optional[str],
+    include_deleted: bool,
+    min_rating: Optional[float],
+) -> tuple[str, list]:
+    """Build the shared FROM/WHERE clause for the search queries.
+
+    Returns (base_query, params). A base query of "FROM titles WHERE 1=0" means
+    no search criteria were given and the caller should return nothing.
+    """
+    title_conditions = []
+    params = []
+
+    if query:
+        if search_type == "starts_with":
+            title_conditions.append("title LIKE ?")
+            params.append(f"{query}%")
+        elif search_type == "ends_with":
+            title_conditions.append("title LIKE ?")
+            params.append(f"%{query}")
+        elif search_type == "all_words":
+            words = query.strip().split()
+            if words:
+                word_conditions = " AND ".join(["title LIKE ?"] * len(words))
+                title_conditions.append(f"({word_conditions})")
+                params.extend([f"%{word}%" for word in words])
+        else:  # "contains" (default)
+            title_conditions.append("title LIKE ?")
+            params.append(f"%{query}%")
+
+    if director:
+        director = director.strip()
+        if director:
+            title_conditions.append("director LIKE ?")
+            params.append(f"%{director}%")
+
+    deleted_filter = "" if include_deleted else "deleted_at IS NULL AND "
+    if title_conditions:
+        base_query = (f"FROM titles {RATING_JOIN} WHERE "
+                      + deleted_filter + " AND ".join(title_conditions))
+    else:
+        # No criteria: match nothing, but keep the join so the callers' rating
+        # columns still resolve.
+        return f"FROM titles {RATING_JOIN} WHERE 1=0", []
+
+    if section:
+        base_query += " AND section = ?"
+        params.append(section)
+
+    if min_rating is not None:
+        base_query += f" AND {RATING_SCORE_SQL} >= ?"
+        params.append(min_rating)
+
+    return base_query, params
+
+
 def search_titles(
     query: str,
     section: Optional[str] = None,
@@ -401,55 +460,12 @@ def search_titles(
     Returns:
         A tuple of (results, total_count).
     """
+    base_query, params = _build_search_filter(
+        query, section, search_type, director, include_deleted, min_rating
+    )
+
     with get_db() as conn:
         cursor = conn.cursor()
-
-        # Build query based on search type for title
-        title_conditions = []
-        params = []
-        
-        if query:
-            if search_type == "starts_with":
-                title_conditions.append("title LIKE ?")
-                params.append(f"{query}%")
-            elif search_type == "ends_with":
-                title_conditions.append("title LIKE ?")
-                params.append(f"%{query}")
-            elif search_type == "all_words":
-                # Split query into words and create conditions for each word
-                words = query.strip().split()
-                if words:
-                    word_conditions = " AND ".join(["title LIKE ?"] * len(words))
-                    title_conditions.append(f"({word_conditions})")
-                    params.extend([f"%{word}%" for word in words])
-            else:  # "contains" (default)
-                title_conditions.append("title LIKE ?")
-                params.append(f"%{query}%")
-        
-        # Add director search if provided
-        if director:
-            director = director.strip()
-            if director:
-                title_conditions.append("director LIKE ?")
-                params.append(f"%{director}%")
-        
-        # Build base query
-        deleted_filter = "" if include_deleted else "deleted_at IS NULL AND "
-        if title_conditions:
-            base_query = (f"FROM titles {RATING_JOIN} WHERE "
-                          + deleted_filter + " AND ".join(title_conditions))
-        else:
-            # If no search criteria, return empty results
-            base_query = "FROM titles WHERE 1=0"
-            params = []
-
-        if section:
-            base_query += " AND section = ?"
-            params.append(section)
-
-        if min_rating is not None and title_conditions:
-            base_query += f" AND {RATING_SCORE_SQL} >= ?"
-            params.append(min_rating)
 
         # Get total count
         cursor.execute(f"SELECT COUNT(*) {base_query}", params)
@@ -476,6 +492,116 @@ def search_titles(
 
         results = [dict(row) for row in cursor.fetchall()]
         return results, total
+
+
+GROUP_KEY_SQL = "COALESCE('tmdb:' || r.tmdb_id, 'post:' || titles.id)"
+
+
+def search_titles_grouped(
+    query: str,
+    section: Optional[str] = None,
+    page: int = 1,
+    per_page: int = 30,
+    search_type: str = "contains",
+    director: Optional[str] = None,
+    include_deleted: bool = False,
+    min_rating: Optional[float] = None,
+    sort: str = "title"
+) -> tuple[list[dict], int]:
+    """Search titles grouped by film rather than by post.
+
+    Posts sharing a tmdb_id collapse into one group; a post without a match is a
+    group of its own. Paging happens over groups, so a film with many posts is
+    never split across two pages and the count means films, not posts.
+
+    Returns (groups, total_groups). Each group is a dict with:
+        key, tmdb_id, title, year, director, section, poster_path, rating,
+        rating_source, matched_title, matched_year, confidence, match_status,
+        posts (the underlying rows, as returned by search_titles).
+    """
+    base_query, params = _build_search_filter(
+        query, section, search_type, director, include_deleted, min_rating
+    )
+
+    # No criteria: _build_search_filter returns a base query without the join,
+    # so the group key expression would not resolve.
+    if "1=0" in base_query:
+        return [], 0
+
+    group_order = {
+        'rating': f"MAX({RATING_SCORE_SQL}) DESC NULLS LAST, sort_title",
+        'year': "MAX(year) DESC NULLS LAST, sort_title",
+        'year_asc': "MIN(year) ASC NULLS LAST, sort_title",
+    }.get(sort, "sort_title")
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            f"SELECT COUNT(*) FROM (SELECT 1 {base_query} GROUP BY {GROUP_KEY_SQL})",
+            params
+        )
+        total = cursor.fetchone()[0]
+
+        offset = (page - 1) * per_page
+        cursor.execute(
+            f"""
+            SELECT {GROUP_KEY_SQL} AS group_key, MIN(title) AS sort_title
+            {base_query}
+            GROUP BY group_key
+            ORDER BY {group_order}
+            LIMIT ? OFFSET ?
+            """,
+            params + [per_page, offset]
+        )
+        keys = [row["group_key"] for row in cursor.fetchall()]
+        if not keys:
+            return [], total
+
+        placeholders = ",".join("?" * len(keys))
+        cursor.execute(
+            f"""
+            SELECT titles.id, title, url, section, metadata, quality, languages,
+                   director, year, title_first_letter, created_at, deleted_at,
+                   {GROUP_KEY_SQL} AS group_key, {RATING_COLUMNS}
+            {base_query} AND {GROUP_KEY_SQL} IN ({placeholders})
+            ORDER BY title
+            """,
+            params + keys
+        )
+
+        grouped: dict[str, dict] = {key: None for key in keys}
+        for row in cursor.fetchall():
+            post = dict(row)
+            key = post.pop("group_key")
+            group = grouped.get(key)
+            if group is None:
+                group = _new_group(key, post)
+                grouped[key] = group
+            group["posts"].append(post)
+
+        return [g for g in grouped.values() if g], total
+
+
+def _new_group(key: str, post: dict) -> dict:
+    """Seed a result group from its first post."""
+    has_imdb = post.get("imdb_rating") is not None
+    return {
+        "key": key,
+        "tmdb_id": post.get("tmdb_id"),
+        "title": post.get("matched_title") or post["title"],
+        "year": post.get("matched_year") or post.get("year"),
+        "director": post.get("director"),
+        "section": post.get("section"),
+        "poster_path": post.get("poster_path"),
+        "rating": post.get("imdb_rating") if has_imdb else post.get("tmdb_rating"),
+        "rating_source": "IMDb" if has_imdb else "TMDB",
+        "matched_title": post.get("matched_title"),
+        "matched_year": post.get("matched_year"),
+        "confidence": post.get("confidence"),
+        "match_status": post.get("match_status"),
+        "posts": [],
+    }
 
 
 def get_all_sections() -> list[str]:
