@@ -28,7 +28,8 @@
       {% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}
       {% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}
       {% if min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
-      <button type="submit">Cerca</button>
+      <span class="kbd" data-kbd>⌘K</span>
+      <noscript><button type="submit">Cerca</button></noscript>
     </form>
 
     {# Due form separate: il bottone porta il valore successivo, e un campo
@@ -36,8 +37,9 @@
     <div class="filter-row">
       <form method="get" action="{{ url_for('v2_search') }}">
         {{ carry('search_type') }}
-        <button class="control" type="submit" name="search_type" value="{{ next_search_type }}">
-          {{ search_type_label }} <span class="caret">▾</span>
+        <button class="control" type="submit" name="search_type" value="{{ next_search_type }}"
+                data-cycle='{{ search_types|tojson }}' data-current="{{ search_type }}">
+          <span class="control-value">{{ search_type_label }}</span> <span class="caret">▾</span>
         </button>
       </form>
 
@@ -45,8 +47,9 @@
         <span class="control-label">Ordina</span>
         <form method="get" action="{{ url_for('v2_search') }}">
           {{ carry('sort') }}
-          <button class="control" type="submit" name="sort" value="{{ next_sort }}">
-            {{ sort_label }} <span class="caret">▾</span>
+          <button class="control" type="submit" name="sort" value="{{ next_sort }}"
+                  data-cycle='{{ sorts|tojson }}' data-current="{{ sort }}">
+            <span class="control-value">{{ sort_label }}</span> <span class="caret">▾</span>
           </button>
         </form>
       </div>
@@ -132,7 +135,7 @@
   </div>
 
   <aside class="panel" id="panel-region">
-    <form method="get" action="{{ url_for('v2_search') }}" data-autosubmit>
+    <form method="get" action="{{ url_for('v2_search') }}">
       <input type="hidden" name="q" value="{{ q }}">
       <input type="hidden" name="director" value="{{ director }}">
       <input type="hidden" name="search_type" value="{{ search_type }}">
@@ -157,8 +160,7 @@
         <input type="range" class="slider" name="min_rating" min="0" max="10" step="0.5"
                value="{{ min_rating or 0 }}"
                oninput="document.getElementById('rating-read').textContent =
-                        this.value > 0 ? (+this.value).toFixed(1) : '—'"
-               onchange="this.form.submit()">
+                        this.value > 0 ? (+this.value).toFixed(1) : '—'">
       </div>
 
       {% if facets.sections %}

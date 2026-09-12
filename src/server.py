@@ -236,6 +236,7 @@ def v2_search():
         total=total, total_posts=total_posts, browsing=browsing,
         sections=sections, qualities=qualities, facets=facets,
         active_chips=chips,
+        search_types=V2_SEARCH_TYPES, sorts=V2_SORTS,
         search_type_label=dict(V2_SEARCH_TYPES)[search_type],
         sort_label=dict(V2_SORTS)[sort],
         next_search_type=_cycle(V2_SEARCH_TYPES, search_type),
