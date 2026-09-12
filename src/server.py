@@ -11,6 +11,7 @@ from werkzeug.serving import WSGIRequestHandler
 import config
 import database
 import parser
+import ratings
 import scraper
 import session_store
 
@@ -64,6 +65,12 @@ import_status = {
     'message': None
 }
 
+# Same for the ratings enrichment, which runs on its own thread.
+ratings_status = {
+    'running': False,
+    'message': None
+}
+
 
 @app.route('/')
 def index():
@@ -85,6 +92,8 @@ def api_search():
         page: Page number (default: 1)
         per_page: Results per page (default: 50)
         search_type: Type of search - "contains", "starts_with", "ends_with", "all_words" (default: "contains")
+        min_rating: Minimum rating, 0 to 10 (optional)
+        sort: "title" (default), "rating", "year" or "year_asc"
     """
     query = request.args.get('q', '').strip()
     director = request.args.get('director', '').strip() or None
@@ -93,6 +102,8 @@ def api_search():
     per_page = request.args.get('per_page', 50, type=int)
     search_type = request.args.get('search_type', 'contains').strip()
     include_deleted = request.args.get('include_deleted', 'false').lower() == 'true'
+    min_rating = request.args.get('min_rating', type=float)
+    sort = request.args.get('sort', 'title').strip()
 
     # Validate parameters - at least one of query or director must be provided
     if not query and not director:
@@ -108,6 +119,12 @@ def api_search():
     if search_type not in valid_search_types:
         search_type = 'contains'
 
+    if sort not in ('title', 'rating', 'year', 'year_asc'):
+        sort = 'title'
+
+    if min_rating is not None and not 0 <= min_rating <= 10:
+        min_rating = None
+
     # Perform search
     results, total = database.search_titles(
         query=query,
@@ -116,7 +133,9 @@ def api_search():
         per_page=per_page,
         search_type=search_type,
         director=director,
-        include_deleted=include_deleted
+        include_deleted=include_deleted,
+        min_rating=min_rating,
+        sort=sort
     )
 
     # Calculate pagination info
@@ -127,6 +146,8 @@ def api_search():
         'director': director,
         'section': section,
         'search_type': search_type,
+        'min_rating': min_rating,
+        'sort': sort,
         'results': results,
         'pagination': {
             'page': page,
@@ -652,6 +673,171 @@ def api_missing_data():
             'section': section
         }
     })
+
+
+@app.route('/ratings')
+def ratings_page():
+    """Render the page to review the matches against TMDB."""
+    sections = database.get_all_sections()
+    return render_template('ratings.html', sections=sections)
+
+
+@app.route('/api/ratings/status')
+def api_ratings_status():
+    """Configuration, progress and counts of the rating enrichment."""
+    return jsonify({
+        'running': ratings_status['running'],
+        'message': ratings_status['message'],
+        'enabled': config.RATINGS_ENABLED,
+        'tmdb_key': bool(config.TMDB_API_KEY),
+        'omdb_key': bool(config.OMDB_API_KEY),
+        'omdb_daily_limit': config.OMDB_DAILY_LIMIT,
+        'stats': database.get_rating_stats(),
+    })
+
+
+@app.route('/api/ratings/enrich', methods=['POST'])
+def api_ratings_enrich():
+    """Start an enrichment pass in the background."""
+    global ratings_status
+
+    if ratings_status['running']:
+        return jsonify({'error': 'Un arricchimento e\' gia\' in corso'}), 409
+    if not config.TMDB_API_KEY:
+        return jsonify({'error': 'TMDB_API_KEY non configurata'}), 400
+
+    data = request.get_json(silent=True) or {}
+    limit = data.get('limit') or config.RATING_MAX_PER_RUN
+    retry_unmatched = bool(data.get('retry_unmatched'))
+
+    ratings_status['running'] = True
+    ratings_status['message'] = 'Avvio arricchimento...'
+
+    def run_enrichment():
+        global ratings_status
+
+        def update_status(msg):
+            ratings_status['message'] = msg
+
+        try:
+            result = ratings.run_enrichment(
+                limit=int(limit), retry_unmatched=retry_unmatched,
+                status_callback=update_status
+            )
+            tmdb = result.get('tmdb', {})
+            imdb = result.get('imdb', {})
+            ratings_status['message'] = (
+                f"Completato: {tmdb.get('matched', 0)} agganciati, "
+                f"{tmdb.get('low_confidence', 0)} da rivedere, "
+                f"{tmdb.get('unmatched', 0)} senza match, "
+                f"{imdb.get('with_rating', 0)} voti IMDb"
+            )
+        except Exception as e:
+            web_logger.error(f"Errore nell'arricchimento voti: {e}", exc_info=True)
+            ratings_status['message'] = f'Errore: {e}'
+        finally:
+            ratings_status['running'] = False
+
+    threading.Thread(target=run_enrichment, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Arricchimento avviato'})
+
+
+@app.route('/api/ratings/review')
+def api_ratings_review():
+    """
+    List matches to eyeball.
+
+    Query parameters:
+        status: low_confidence (default), unmatched, rejected, matched, manual, pending
+        section: Filter by section (optional)
+        page, per_page: Pagination
+    """
+    status = request.args.get('status', 'low_confidence').strip()
+    section = request.args.get('section', '').strip() or None
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+
+    valid = ('low_confidence', 'unmatched', 'rejected', 'matched', 'manual', 'pending')
+    if status not in valid:
+        status = 'low_confidence'
+    if page < 1:
+        page = 1
+    if per_page < 1 or per_page > 100:
+        per_page = 50
+
+    results, total = database.get_rating_matches(
+        page=page, per_page=per_page, status=status, section=section
+    )
+    total_pages = (total + per_page - 1) // per_page
+
+    return jsonify({
+        'status': status,
+        'results': results,
+        'pagination': {
+            'page': page,
+            'per_page': per_page,
+            'total': total,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_prev': page > 1,
+        },
+    })
+
+
+@app.route('/api/ratings/match', methods=['POST'])
+def api_ratings_match():
+    """Pin a title to a TMDB entry given its url or id."""
+    data = request.get_json(silent=True) or {}
+    title_id = data.get('title_id')
+    reference = str(data.get('reference', '')).strip()
+
+    if not title_id or not reference:
+        return jsonify({'error': 'Servono "title_id" e "reference"'}), 400
+    if not config.TMDB_API_KEY:
+        return jsonify({'error': 'TMDB_API_KEY non configurata'}), 400
+
+    parsed = ratings.parse_tmdb_reference(reference)
+    if not parsed:
+        return jsonify({'error': 'Riferimento TMDB non riconosciuto'}), 400
+
+    media_type, tmdb_id = parsed
+    try:
+        match = ratings.match_by_tmdb_id(media_type, tmdb_id)
+    except ratings.RatingsError as e:
+        return jsonify({'error': str(e)}), 502
+
+    if not match:
+        return jsonify({'error': f'Nessun {media_type} con id {tmdb_id} su TMDB'}), 404
+
+    database.save_rating(int(title_id), 'manual', **match)
+    if match.get('imdb_id'):
+        ratings.refresh_imdb_vote(int(title_id), match['imdb_id'])
+
+    return jsonify({'success': True, 'match': match})
+
+
+@app.route('/api/ratings/reject', methods=['POST'])
+def api_ratings_reject():
+    """Throw away a wrong match and stop proposing it."""
+    data = request.get_json(silent=True) or {}
+    title_id = data.get('title_id')
+    if not title_id:
+        return jsonify({'error': 'Serve "title_id"'}), 400
+
+    database.reject_rating(int(title_id))
+    return jsonify({'success': True})
+
+
+@app.route('/api/ratings/reset', methods=['POST'])
+def api_ratings_reset():
+    """Put a title back in the queue for the next pass."""
+    data = request.get_json(silent=True) or {}
+    title_id = data.get('title_id')
+    if not title_id:
+        return jsonify({'error': 'Serve "title_id"'}), 400
+
+    database.reset_rating(int(title_id))
+    return jsonify({'success': True})
 
 
 def main():

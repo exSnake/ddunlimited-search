@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voti - DDUnlimited Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .panel {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .panel h2 {
+            margin-top: 0;
+            color: #fff;
+            font-size: 1.2rem;
+        }
+        .counters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .counter {
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px 12px;
+            min-width: 92px;
+        }
+        .counter .value {
+            display: block;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .counter .label {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        .notice {
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+        }
+        .notice-warn {
+            background: #3a2e1e;
+            border: 1px solid #b58900;
+            color: #f0d68a;
+        }
+        .notice-info {
+            background: #16213e;
+            border: 1px solid #0f4c75;
+            color: #9fd3f0;
+        }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #fff;
+        }
+        .btn-primary { background: #0f4c75; }
+        .btn-primary:hover { background: #1a6da3; }
+        .btn-secondary { background: #2c3e50; }
+        .btn-secondary:hover { background: #34495e; }
+        .btn-danger { background: #7d2f2f; }
+        .btn-danger:hover { background: #a03c3c; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .filter-btn {
+            padding: 6px 12px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .filter-btn:hover { background: #0f4c75; }
+        .filter-btn.active {
+            background: #0f4c75;
+            border-color: #3498db;
+            color: #fff;
+        }
+        .match-item {
+            display: flex;
+            gap: 12px;
+            padding: 15px;
+            background: #16213e;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .match-body { flex: 1; min-width: 0; }
+        .match-title {
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 500;
+            word-break: break-word;
+        }
+        .match-title:hover { text-decoration: underline; }
+        .matched-to {
+            margin-top: 6px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        .matched-to a { color: #9fd3f0; }
+        .confidence {
+            font-size: 0.8rem;
+            color: #888;
+            margin-left: 6px;
+        }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .actions input[type="text"] {
+            flex: 1;
+            min-width: 220px;
+            padding: 6px 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        .row-status {
+            font-size: 0.85rem;
+            margin-top: 8px;
+        }
+        .row-status.ok { color: #27ae60; }
+        .row-status.error { color: #e74c3c; }
+        .pagination-buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .pagination-buttons button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #0f4c75;
+            color: #fff;
+            cursor: pointer;
+        }
+        .page-info { color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DDUnlimited Search - Voti</h1>
+            <nav style="margin-top: 10px;">
+                <a href="/" style="margin-right: 15px;">Ricerca</a>
+                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/ratings" style="margin-right: 15px;">Voti</a>
+                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
+                <a href="/logs">Logs</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="panel">
+                <h2>Stato</h2>
+                <div id="config-notices"></div>
+                <div class="counters" id="counters"></div>
+                <div class="button-group">
+                    <button class="btn btn-primary" id="btn-enrich" onclick="startEnrichment(false)">
+                        Arricchisci
+                    </button>
+                    <button class="btn btn-secondary" id="btn-retry" onclick="startEnrichment(true)">
+                        Riprova i non agganciati
+                    </button>
+                    <button class="btn btn-secondary" onclick="loadStatus()">Aggiorna</button>
+                </div>
+                <div id="enrich-status" class="row-status"></div>
+            </div>
+
+            <div class="panel">
+                <h2>Abbinamenti</h2>
+                <div class="filters">
+                    <button class="filter-btn" data-status="low_confidence">Da rivedere</button>
+                    <button class="filter-btn" data-status="unmatched">Senza match</button>
+                    <button class="filter-btn" data-status="matched">Agganciati</button>
+                    <button class="filter-btn" data-status="manual">Manuali</button>
+                    <button class="filter-btn" data-status="rejected">Scartati</button>
+                    <button class="filter-btn" data-status="pending">In coda</button>
+                    <select id="section-filter">
+                        <option value="">Tutte le sezioni</option>
+                        {% for section in sections %}
+                        <option value="{{ section }}">{{ section }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div id="results-info" class="results-info"></div>
+                <div id="results"></div>
+                <div id="pagination"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>DDUnlimited Search - Solo per uso personale</p>
+        </footer>
+    </div>
+
+    <script>
+        const POSTER_BASE = 'https://image.tmdb.org/t/p/w92';
+        let currentStatus = 'low_confidence';
+        let currentPage = 1;
+        let statusTimer = null;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    currentStatus = btn.dataset.status;
+                    currentPage = 1;
+                    markActiveFilter();
+                    loadMatches();
+                });
+            });
+            document.getElementById('section-filter').addEventListener('change', () => {
+                currentPage = 1;
+                loadMatches();
+            });
+            markActiveFilter();
+            loadStatus();
+            loadMatches();
+        });
+
+        function markActiveFilter() {
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.status === currentStatus);
+            });
+        }
+
+        async function loadStatus() {
+            const response = await fetch('/api/ratings/status');
+            const data = await response.json();
+
+            const notices = [];
+            if (!data.enabled) {
+                notices.push(['warn', 'Arricchimento disattivato (RATINGS_ENABLED=false).']);
+            }
+            if (!data.tmdb_key) {
+                notices.push(['warn', "TMDB_API_KEY non configurata: nessun abbinamento e\u0027 possibile."]);
+            }
+            if (!data.omdb_key) {
+                notices.push(['info', 'OMDB_API_KEY non configurata: viene mostrato il voto TMDB.']);
+            } else if (data.stats.pending_imdb) {
+                notices.push(['info', `${data.stats.pending_imdb} titoli in attesa del voto IMDb `
+                    + `(max ${data.omdb_daily_limit} al giorno).`]);
+            }
+            document.getElementById('config-notices').innerHTML = notices
+                .map(([kind, text]) => `<div class="notice notice-${kind}">${text}</div>`).join('');
+
+            const s = data.stats;
+            const counters = [
+                ['Titoli', s.total_titles], ['Agganciati', s.matched],
+                ['Da rivedere', s.low_confidence], ['Senza match', s.unmatched],
+                ['Scartati', s.rejected], ['In coda', s.pending], ['Voti IMDb', s.with_imdb],
+            ];
+            document.getElementById('counters').innerHTML = counters.map(([label, value]) =>
+                `<div class="counter"><span class="value">${value.toLocaleString('it-IT')}</span>`
+                + `<span class="label">${label}</span></div>`).join('');
+
+            document.getElementById('btn-enrich').disabled = data.running || !data.tmdb_key;
+            document.getElementById('btn-retry').disabled = data.running || !data.tmdb_key;
+            document.getElementById('enrich-status').textContent = data.message || '';
+
+            // Poll only while something is running.
+            clearTimeout(statusTimer);
+            if (data.running) {
+                statusTimer = setTimeout(loadStatus, 2000);
+            }
+        }
+
+        async function startEnrichment(retryUnmatched) {
+            document.getElementById('btn-enrich').disabled = true;
+            document.getElementById('btn-retry').disabled = true;
+
+            const response = await fetch('/api/ratings/enrich', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({retry_unmatched: retryUnmatched}),
+            });
+            const data = await response.json();
+            if (data.error) {
+                document.getElementById('enrich-status').textContent = data.error;
+            }
+            loadStatus();
+        }
+
+        async function loadMatches() {
+            const params = new URLSearchParams({status: currentStatus, page: currentPage});
+            const section = document.getElementById('section-filter').value;
+            if (section) params.set('section', section);
+
+            const response = await fetch(`/api/ratings/review?${params}`);
+            const data = await response.json();
+            renderMatches(data);
+        }
+
+        function renderMatches(data) {
+            const {results, pagination} = data;
+            const info = document.getElementById('results-info');
+
+            if (!pagination.total) {
+                info.textContent = 'Nessun titolo in questo stato';
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            const start = (pagination.page - 1) * pagination.per_page + 1;
+            info.textContent = `${start}-${start + results.length - 1} di ${pagination.total}`;
+
+            document.getElementById('results').innerHTML = results.map(renderMatch).join('');
+            renderPagination(pagination);
+        }
+
+        function renderMatch(item) {
+            const poster = item.poster_path
+                ? `<img class="poster" src="${POSTER_BASE}${item.poster_path}" alt="" loading="lazy">`
+                : '<div class="poster poster-empty"></div>';
+
+            const rating = item.imdb_rating ?? item.tmdb_rating;
+            const ratingText = rating !== null && rating !== undefined
+                ? `⭐ ${rating.toFixed(1)} ${item.imdb_rating != null ? 'IMDb' : 'TMDB'}` : '';
+
+            let matchedTo = '<em>nessun abbinamento</em>';
+            if (item.tmdb_id) {
+                const tmdbUrl = `https://www.themoviedb.org/${item.media_type}/${item.tmdb_id}`;
+                const imdbLink = item.imdb_id
+                    ? ` · <a href="https://www.imdb.com/title/${item.imdb_id}/" target="_blank"
+                           rel="noopener">IMDb</a>` : '';
+                matchedTo = `<a href="${tmdbUrl}" target="_blank" rel="noopener">`
+                    + `${escapeHtml(item.matched_title || '')}`
+                    + `${item.matched_year ? ' (' + item.matched_year + ')' : ''}</a>`
+                    + `${imdbLink} ${ratingText}`
+                    + `<span class="confidence">confidenza ${(item.confidence ?? 0).toFixed(2)}</span>`;
+            }
+
+            const meta = [
+                item.section, item.director, item.year,
+            ].filter(Boolean).map(v => `<span class="section">${escapeHtml(String(v))}</span>`).join(' ');
+
+            return `
+                <div class="match-item" id="match-${item.id}">
+                    ${poster}
+                    <div class="match-body">
+                        <a class="match-title" href="${item.url}" target="_blank"
+                           rel="noopener">${escapeHtml(item.title)}</a>
+                        <div class="item-meta" style="margin-top:6px">${meta}</div>
+                        <div class="matched-to">${matchedTo}</div>
+                        <div class="actions">
+                            <input type="text" id="ref-${item.id}"
+                                   placeholder="URL o id TMDB (es. movie/238)">
+                            <button class="btn btn-primary" onclick="applyMatch(${item.id})">Aggancia</button>
+                            <button class="btn btn-danger" onclick="rejectMatch(${item.id})">Scarta</button>
+                            <button class="btn btn-secondary" onclick="resetMatch(${item.id})">Rimetti in coda</button>
+                        </div>
+                        <div class="row-status" id="status-${item.id}"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showRowStatus(titleId, kind, message) {
+            const el = document.getElementById(`status-${titleId}`);
+            if (el) {
+                el.className = `row-status ${kind}`;
+                el.textContent = message;
+            }
+        }
+
+        async function postJson(url, payload) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            return response.json();
+        }
+
+        async function applyMatch(titleId) {
+            const reference = document.getElementById(`ref-${titleId}`).value.trim();
+            if (!reference) {
+                showRowStatus(titleId, 'error', 'Incolla la URL TMDB del titolo giusto');
+                return;
+            }
+
+            const data = await postJson('/api/ratings/match', {title_id: titleId, reference});
+            if (data.error) {
+                showRowStatus(titleId, 'error', data.error);
+                return;
+            }
+            showRowStatus(titleId, 'ok',
+                `Agganciato a ${data.match.matched_title || ''} (${data.match.matched_year || '?'})`);
+            loadStatus();
+        }
+
+        async function rejectMatch(titleId) {
+            const data = await postJson('/api/ratings/reject', {title_id: titleId});
+            showRowStatus(titleId, data.error ? 'error' : 'ok', data.error || 'Scartato');
+            loadStatus();
+        }
+
+        async function resetMatch(titleId) {
+            const data = await postJson('/api/ratings/reset', {title_id: titleId});
+            showRowStatus(titleId, data.error ? 'error' : 'ok',
+                data.error || 'Rimesso in coda per la prossima passata');
+            loadStatus();
+        }
+
+        function renderPagination(pagination) {
+            if (pagination.total_pages <= 1) {
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            let html = '<div class="pagination-buttons">';
+            if (pagination.has_prev) {
+                html += `<button onclick="goToPage(${pagination.page - 1})">Precedente</button>`;
+            }
+            html += `<span class="page-info">Pagina ${pagination.page} di ${pagination.total_pages}</span>`;
+            if (pagination.has_next) {
+                html += `<button onclick="goToPage(${pagination.page + 1})">Successiva</button>`;
+            }
+            document.getElementById('pagination').innerHTML = html + '</div>';
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadMatches();
+            window.scrollTo(0, 0);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

@@ -23,6 +23,13 @@ services:
       - SCRAPE_INTERVAL_DAYS=${SCRAPE_INTERVAL_DAYS:-3}
       - SCRAPE_HOUR=${SCRAPE_HOUR:-2}
       - SCRAPE_MINUTE=${SCRAPE_MINUTE:-0}
+      - RATINGS_ENABLED=${RATINGS_ENABLED:-true}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - OMDB_API_KEY=${OMDB_API_KEY}
+      - TMDB_LANGUAGE=${TMDB_LANGUAGE:-it-IT}
+      - OMDB_DAILY_LIMIT=${OMDB_DAILY_LIMIT:-900}
+      - RATING_MIN_CONFIDENCE=${RATING_MIN_CONFIDENCE:-0.75}
+      - RATING_BATCH_SIZE=${RATING_BATCH_SIZE:-500}
     volumes:
       - ./data:/app/data
       - ./pages.txt:/app/pages.txt
@@ -47,6 +54,13 @@ services:
       - SCRAPE_INTERVAL_DAYS=${SCRAPE_INTERVAL_DAYS:-3}
       - SCRAPE_HOUR=${SCRAPE_HOUR:-2}
       - SCRAPE_MINUTE=${SCRAPE_MINUTE:-0}
+      - RATINGS_ENABLED=${RATINGS_ENABLED:-true}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - OMDB_API_KEY=${OMDB_API_KEY}
+      - TMDB_LANGUAGE=${TMDB_LANGUAGE:-it-IT}
+      - OMDB_DAILY_LIMIT=${OMDB_DAILY_LIMIT:-900}
+      - RATING_MIN_CONFIDENCE=${RATING_MIN_CONFIDENCE:-0.75}
+      - RATING_BATCH_SIZE=${RATING_BATCH_SIZE:-500}
     volumes:
       - ./data:/app/data
       - ./pages.txt:/app/pages.txt

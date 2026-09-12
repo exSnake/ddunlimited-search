@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 import config
 import database
+import ratings
 import scraper
 
 # Create logs directory if it doesn't exist
@@ -32,6 +33,10 @@ POLL_SECONDS = 60
 # Without it a scraper that cannot authenticate would hammer the forum on
 # every poll.
 RETRY_BACKOFF = timedelta(hours=1)
+
+# The ratings pass has its own cadence: TMDB has a backlog to chew through
+# after an import, and the OMDb daily budget refills every night.
+RATINGS_INTERVAL = timedelta(hours=6)
 
 
 def parse_timestamp(value) -> datetime | None:
@@ -135,6 +140,18 @@ def run_import() -> bool:
     return bool(completed)
 
 
+def run_ratings() -> None:
+    """Match the new titles and top up the IMDb votes."""
+    if not config.RATINGS_ENABLED or not config.TMDB_API_KEY:
+        return
+
+    try:
+        result = ratings.run_enrichment(limit=config.RATING_MAX_PER_RUN)
+        logger.info(f"Ratings enrichment: {result}")
+    except Exception as e:
+        logger.error(f"Error during ratings enrichment: {e}", exc_info=True)
+
+
 def main():
     """Main scheduler loop."""
     logger.info("DDUnlimited Search Scheduler starting...")
@@ -148,6 +165,7 @@ def main():
     logger.info(f"Scheduled time: {schedule['hour']:02d}:{schedule['minute']:02d}")
 
     last_reason = None
+    next_ratings_at = datetime.now()
     while True:
         try:
             schedule = database.get_schedule()
@@ -160,6 +178,11 @@ def main():
             if due:
                 run_import()
                 last_reason = None
+                next_ratings_at = datetime.now()
+
+            if datetime.now() >= next_ratings_at:
+                run_ratings()
+                next_ratings_at = datetime.now() + RATINGS_INTERVAL
 
             time.sleep(POLL_SECONDS)
 

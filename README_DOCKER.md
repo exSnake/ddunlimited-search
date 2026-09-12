@@ -65,6 +65,9 @@ Per pubblicare un'immagine che funziona sia su x86_64 che su ARM64 (Raspberry Pi
 - `SCRAPE_INTERVAL_DAYS`: Giorni di attesa tra le importazioni (default: 3)
 - `SCRAPE_HOUR`: Ora del giorno per eseguire l'importazione (formato 24h, default: 2 = 2:00 AM)
 - `SCRAPE_MINUTE`: Minuto dell'ora per eseguire l'importazione (default: 0)
+- `TMDB_API_KEY`: Chiave TMDB per abbinare i titoli alle schede e mostrarne il voto
+- `OMDB_API_KEY`: Chiave OMDb per il voto IMDb (facoltativa, 1000 chiamate al giorno)
+- `RATINGS_ENABLED`: Mettila a `false` per fermare l'abbinamento (default: true)
 
 ## Avvio
 

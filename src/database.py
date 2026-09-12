@@ -213,6 +213,35 @@ def init_db():
             )
         """)
 
+        # Ratings pulled from TMDB (and IMDb through OMDb). Kept apart from
+        # titles: a row here means the title was looked up, whatever the outcome.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS title_ratings (
+                title_id INTEGER PRIMARY KEY,
+                media_type TEXT,
+                tmdb_id INTEGER,
+                imdb_id TEXT,
+                tmdb_rating REAL,
+                tmdb_votes INTEGER,
+                imdb_rating REAL,
+                imdb_votes INTEGER,
+                poster_path TEXT,
+                matched_title TEXT,
+                matched_year INTEGER,
+                confidence REAL,
+                match_status TEXT NOT NULL DEFAULT 'unmatched',
+                matched_at TIMESTAMP,
+                imdb_checked_at TIMESTAMP,
+                FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_status ON title_ratings(match_status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_imdb_id ON title_ratings(imdb_id)")
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rating_score
+            ON title_ratings(COALESCE(imdb_rating, tmdb_rating))
+        """)
+
 
 def insert_title(title: str, url: str, section: str, metadata: str = None, quality: str = None,
                  languages: str = None, raw_info: str = None,
@@ -247,6 +276,17 @@ def insert_title(title: str, url: str, section: str, metadata: str = None, quali
             return 'inserted'
         except sqlite3.IntegrityError:
             pass
+
+        # A retitled post is a different film as far as the catalogues go, so its
+        # match starts over. One corrected by hand is left alone.
+        cursor.execute(
+            """
+            DELETE FROM title_ratings
+            WHERE match_status != 'manual'
+              AND title_id IN (SELECT id FROM titles WHERE url = ? AND title IS NOT ?)
+            """,
+            (url, title)
+        )
 
         if update_details:
             cursor.execute(
@@ -341,7 +381,9 @@ def search_titles(
     per_page: int = 50,
     search_type: str = "contains",
     director: Optional[str] = None,
-    include_deleted: bool = False
+    include_deleted: bool = False,
+    min_rating: Optional[float] = None,
+    sort: str = "title"
 ) -> tuple[list[dict], int]:
     """
     Search titles by query string.
@@ -353,6 +395,8 @@ def search_titles(
         per_page: Results per page (default: 50)
         search_type: Type of search - "contains", "starts_with", "ends_with", "all_words" (default: "contains")
         director: Search by director name (optional, searches in director field)
+        min_rating: Keep only titles rated at least this much (optional)
+        sort: "title", "rating", "year" or "year_asc"
     
     Returns:
         A tuple of (results, total_count).
@@ -392,7 +436,8 @@ def search_titles(
         # Build base query
         deleted_filter = "" if include_deleted else "deleted_at IS NULL AND "
         if title_conditions:
-            base_query = "FROM titles WHERE " + deleted_filter + " AND ".join(title_conditions)
+            base_query = (f"FROM titles {RATING_JOIN} WHERE "
+                          + deleted_filter + " AND ".join(title_conditions))
         else:
             # If no search criteria, return empty results
             base_query = "FROM titles WHERE 1=0"
@@ -402,18 +447,28 @@ def search_titles(
             base_query += " AND section = ?"
             params.append(section)
 
+        if min_rating is not None and title_conditions:
+            base_query += f" AND {RATING_SCORE_SQL} >= ?"
+            params.append(min_rating)
+
         # Get total count
         cursor.execute(f"SELECT COUNT(*) {base_query}", params)
         total = cursor.fetchone()[0]
+
+        order_by = {
+            'rating': f"{RATING_SCORE_SQL} DESC NULLS LAST, title",
+            'year': "year DESC NULLS LAST, title",
+            'year_asc': "year ASC NULLS LAST, title",
+        }.get(sort, "title")
 
         # Get paginated results
         offset = (page - 1) * per_page
         cursor.execute(
             f"""
-            SELECT id, title, url, section, metadata, quality, director, year, title_first_letter,
-                   created_at, deleted_at
+            SELECT titles.id, title, url, section, metadata, quality, director, year,
+                   title_first_letter, created_at, deleted_at, {RATING_COLUMNS}
             {base_query}
-            ORDER BY title
+            ORDER BY {order_by}
             LIMIT ? OFFSET ?
             """,
             params + [per_page, offset]
@@ -830,6 +885,232 @@ def get_titles_with_missing_data(
         
         results = [dict(row) for row in cursor.fetchall()]
         return results, total
+
+
+# Ratings live in their own table, so every read that shows them joins through
+# these two fragments.
+RATING_SCORE_SQL = "COALESCE(r.imdb_rating, r.tmdb_rating)"
+
+RATING_JOIN = "LEFT JOIN title_ratings r ON r.title_id = titles.id"
+
+RATING_COLUMNS = """
+    r.media_type, r.tmdb_id, r.imdb_id, r.tmdb_rating, r.tmdb_votes,
+    r.imdb_rating, r.imdb_votes, r.poster_path, r.matched_title,
+    r.matched_year, r.confidence, r.match_status
+"""
+
+
+def get_titles_to_match(limit: int = 500, retry_unmatched: bool = False,
+                       after_id: int = 0) -> list[dict]:
+    """
+    Titles that still need a lookup on the rating providers, by ascending id.
+
+    Args:
+        retry_unmatched: also return the titles a previous run failed to match.
+                         Rejected ones are never returned.
+        after_id: resume past this id, so consecutive batches move forward even
+                  when the rows they just wrote still match the filter.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if retry_unmatched:
+            where = "(r.title_id IS NULL OR r.match_status = 'unmatched')"
+        else:
+            where = "r.title_id IS NULL"
+        cursor.execute(
+            f"""
+            SELECT titles.id, titles.title, titles.section, titles.director, titles.year
+            FROM titles {RATING_JOIN}
+            WHERE titles.deleted_at IS NULL AND titles.id > ? AND {where}
+            ORDER BY titles.id
+            LIMIT ?
+            """,
+            (after_id, limit)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def save_rating(title_id: int, match_status: str, **fields) -> None:
+    """Write the outcome of a lookup, replacing any previous one."""
+    columns = ['media_type', 'tmdb_id', 'imdb_id', 'tmdb_rating', 'tmdb_votes',
+               'imdb_rating', 'imdb_votes', 'poster_path', 'matched_title',
+               'matched_year', 'confidence']
+    values = [fields.get(c) for c in columns]
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            INSERT INTO title_ratings (title_id, {', '.join(columns)},
+                                       match_status, matched_at)
+            VALUES (?{', ?' * len(columns)}, ?, ?)
+            ON CONFLICT(title_id) DO UPDATE SET
+                {', '.join(f'{c} = excluded.{c}' for c in columns)},
+                match_status = excluded.match_status,
+                matched_at = excluded.matched_at,
+                imdb_checked_at = NULL
+            """,
+            [title_id] + values + [match_status, datetime.now()]
+        )
+
+
+def reject_rating(title_id: int) -> None:
+    """Mark a match as wrong so the job stops proposing it."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO title_ratings (title_id, match_status, matched_at)
+            VALUES (?, 'rejected', ?)
+            ON CONFLICT(title_id) DO UPDATE SET
+                match_status = 'rejected',
+                tmdb_id = NULL, imdb_id = NULL,
+                tmdb_rating = NULL, tmdb_votes = NULL,
+                imdb_rating = NULL, imdb_votes = NULL,
+                poster_path = NULL, matched_title = NULL, matched_year = NULL,
+                confidence = NULL, imdb_checked_at = NULL,
+                matched_at = excluded.matched_at
+            """,
+            (title_id, datetime.now())
+        )
+
+
+def reset_rating(title_id: int) -> None:
+    """Forget a lookup so the next run tries the title again."""
+    with get_db() as conn:
+        conn.cursor().execute("DELETE FROM title_ratings WHERE title_id = ?", (title_id,))
+
+
+def get_ratings_missing_imdb(limit: int) -> list[dict]:
+    """Matched titles with an IMDb id whose IMDb vote was never fetched."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT r.title_id, r.imdb_id, titles.title
+            FROM title_ratings r
+            JOIN titles ON titles.id = r.title_id
+            WHERE r.imdb_id IS NOT NULL
+              AND r.imdb_checked_at IS NULL
+              AND r.match_status IN ('matched', 'manual')
+              AND titles.deleted_at IS NULL
+            ORDER BY r.title_id
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def save_imdb_rating(title_id: int, rating: Optional[float], votes: Optional[int]) -> None:
+    """Store the IMDb vote. The timestamp is written even when there is none,
+    so a title without a vote is not asked for again."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE title_ratings
+            SET imdb_rating = ?, imdb_votes = ?, imdb_checked_at = ?
+            WHERE title_id = ?
+            """,
+            (rating, votes, datetime.now(), title_id)
+        )
+
+
+def get_rating_stats() -> dict:
+    """Counts for the admin page and the review page."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM titles WHERE deleted_at IS NULL")
+        total = cursor.fetchone()[0]
+
+        cursor.execute(
+            """
+            SELECT r.match_status, COUNT(*)
+            FROM title_ratings r
+            JOIN titles ON titles.id = r.title_id
+            WHERE titles.deleted_at IS NULL
+            GROUP BY r.match_status
+            """
+        )
+        by_status = {row[0]: row[1] for row in cursor.fetchall()}
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM title_ratings r
+            JOIN titles ON titles.id = r.title_id
+            WHERE titles.deleted_at IS NULL AND r.imdb_rating IS NOT NULL
+            """
+        )
+        with_imdb = cursor.fetchone()[0]
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM title_ratings r
+            JOIN titles ON titles.id = r.title_id
+            WHERE titles.deleted_at IS NULL AND r.imdb_id IS NOT NULL
+              AND r.imdb_checked_at IS NULL
+              AND r.match_status IN ('matched', 'manual')
+            """
+        )
+        pending_imdb = cursor.fetchone()[0]
+
+        matched = by_status.get('matched', 0) + by_status.get('manual', 0)
+        return {
+            'total_titles': total,
+            'matched': matched,
+            'low_confidence': by_status.get('low_confidence', 0),
+            'unmatched': by_status.get('unmatched', 0),
+            'rejected': by_status.get('rejected', 0),
+            'pending': total - sum(by_status.values()),
+            'with_imdb': with_imdb,
+            'pending_imdb': pending_imdb,
+        }
+
+
+def get_rating_matches(
+    page: int = 1,
+    per_page: int = 50,
+    status: str = 'low_confidence',
+    section: Optional[str] = None
+) -> tuple[list[dict], int]:
+    """
+    Matches to eyeball, worst first.
+
+    Args:
+        status: one of the match_status values, or "pending" for the titles
+                the job has not looked up yet.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        params = []
+        if status == 'pending':
+            base_query = f"FROM titles {RATING_JOIN} WHERE titles.deleted_at IS NULL AND r.title_id IS NULL"
+        else:
+            base_query = (f"FROM titles {RATING_JOIN} "
+                          "WHERE titles.deleted_at IS NULL AND r.match_status = ?")
+            params.append(status)
+
+        if section:
+            base_query += " AND titles.section = ?"
+            params.append(section)
+
+        cursor.execute(f"SELECT COUNT(*) {base_query}", params)
+        total = cursor.fetchone()[0]
+
+        offset = (page - 1) * per_page
+        cursor.execute(
+            f"""
+            SELECT titles.id, titles.title, titles.url, titles.section,
+                   titles.director, titles.year, {RATING_COLUMNS}
+            {base_query}
+            ORDER BY COALESCE(r.confidence, 0), titles.title
+            LIMIT ? OFFSET ?
+            """,
+            params + [per_page, offset]
+        )
+        return [dict(row) for row in cursor.fetchall()], total
 
 
 if __name__ == "__main__":

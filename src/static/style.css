@@ -136,11 +136,31 @@ nav a:hover {
 }
 
 .result-item {
+    display: flex;
+    gap: 12px;
     padding: 15px;
     background-color: #16213e;
     border-radius: 8px;
     margin-bottom: 10px;
     transition: background-color 0.2s;
+}
+
+.result-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.poster {
+    flex-shrink: 0;
+    width: 46px;
+    height: 69px;
+    border-radius: 4px;
+    object-fit: cover;
+    background-color: #0f1729;
+}
+
+.poster-empty {
+    border: 1px dashed #2c3e50;
 }
 
 .result-item:hover {
@@ -235,6 +255,32 @@ nav a:hover {
     font-size: 0.8rem;
 }
 
+.item-meta .rating {
+    background-color: #b58900;
+    color: #1a1a2e;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.item-meta .rating:hover {
+    background-color: #d4a017;
+}
+
+.item-meta .rating-tmdb {
+    background-color: #01b4e4;
+}
+
+.item-meta .rating-tmdb:hover {
+    background-color: #2ec9f5;
+}
+
+.item-meta .rating-uncertain {
+    opacity: 0.65;
+    font-weight: 500;
+}
+
 .item-meta .status {
     background-color: #2e7d32;
     color: #fff;
@@ -320,7 +366,19 @@ footer {
     margin-top: 8px;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 12px;
+}
+
+.inline-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+}
+
+.inline-label select {
+    padding: 4px 8px;
 }
 
 .checkbox-label {

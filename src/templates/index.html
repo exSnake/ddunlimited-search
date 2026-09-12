@@ -15,6 +15,7 @@
             <nav style="margin-top: 10px;">
                 <a href="/" style="margin-right: 15px;">Ricerca</a>
                 <a href="/sections" style="margin-right: 15px;">Sezioni</a>
+                <a href="/ratings" style="margin-right: 15px;">Voti</a>
                 <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
                 <a href="/logs">Logs</a>
             </nav>
@@ -56,6 +57,27 @@
                         <input type="checkbox" id="include-deleted" name="include_deleted">
                         Mostra eliminati (404)
                     </label>
+                    <label class="inline-label">
+                        Voto minimo
+                        <select id="min-rating" name="min_rating">
+                            <option value="">Tutti</option>
+                            <option value="5">5+</option>
+                            <option value="6">6+</option>
+                            <option value="6.5">6.5+</option>
+                            <option value="7">7+</option>
+                            <option value="7.5">7.5+</option>
+                            <option value="8">8+</option>
+                        </select>
+                    </label>
+                    <label class="inline-label">
+                        Ordina per
+                        <select id="sort" name="sort">
+                            <option value="title">Titolo</option>
+                            <option value="rating">Voto</option>
+                            <option value="year">Anno (recenti)</option>
+                            <option value="year_asc">Anno (vecchi)</option>
+                        </select>
+                    </label>
                 </div>
             </form>
 
@@ -78,6 +100,8 @@
         const searchTypeSelect = document.getElementById('search-type');
         const sectionSelect = document.getElementById('section');
         const includeDeletedCheckbox = document.getElementById('include-deleted');
+        const minRatingSelect = document.getElementById('min-rating');
+        const sortSelect = document.getElementById('sort');
         const resultsDiv = document.getElementById('results');
         const resultsInfoDiv = document.getElementById('results-info');
         const paginationDiv = document.getElementById('pagination');
@@ -141,6 +165,15 @@
             }
         });
 
+        [minRatingSelect, sortSelect].forEach(control => {
+            control.addEventListener('change', () => {
+                if (hasSearchCriteria()) {
+                    currentPage = 1;
+                    performSearch();
+                }
+            });
+        });
+
         // Form submit
         searchForm.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -170,8 +203,13 @@
             const params = new URLSearchParams({
                 page: currentPage,
                 search_type: searchType,
-                include_deleted: includeDeletedCheckbox.checked
+                include_deleted: includeDeletedCheckbox.checked,
+                sort: sortSelect.value
             });
+
+            if (minRatingSelect.value) {
+                params.set('min_rating', minRatingSelect.value);
+            }
 
             if (query) {
                 params.set('q', query);
@@ -227,14 +265,18 @@
 
                 html += `
                     <li class="result-item${item.deleted_at ? ' result-deleted' : ''}">
-                        <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
-                        ${deleted}
-                        <div class="item-meta">
-                            ${section}
-                            ${director}
-                            ${year}
-                            ${quality}
-                            ${chips}
+                        ${buildPoster(item)}
+                        <div class="result-body">
+                            <a href="${item.url}" target="_blank" class="title">${escapeHtml(item.title)}</a>
+                            ${deleted}
+                            <div class="item-meta">
+                                ${buildRating(item)}
+                                ${section}
+                                ${director}
+                                ${year}
+                                ${quality}
+                                ${chips}
+                            </div>
                         </div>
                     </li>
                 `;
@@ -342,10 +384,49 @@
             return langChips + audioChip + videoChip + subChip + statusChip;
         }
 
+        const POSTER_BASE = 'https://image.tmdb.org/t/p/w92';
+
+        function buildPoster(item) {
+            if (!item.poster_path) {
+                return '<div class="poster poster-empty"></div>';
+            }
+            return `<img class="poster" src="${POSTER_BASE}${item.poster_path}"
+                         alt="" loading="lazy" decoding="async">`;
+        }
+
+        function buildRating(item) {
+            const rating = item.imdb_rating ?? item.tmdb_rating;
+            if (rating === null || rating === undefined) return '';
+
+            const fromImdb = item.imdb_rating !== null && item.imdb_rating !== undefined;
+            const votes = fromImdb ? item.imdb_votes : item.tmdb_votes;
+            const source = fromImdb ? 'IMDb' : 'TMDB';
+            const uncertain = item.match_status === 'low_confidence';
+
+            const tip = [
+                `${item.matched_title || ''}${item.matched_year ? ' (' + item.matched_year + ')' : ''}`,
+                votes ? `${votes.toLocaleString('it-IT')} voti su ${source}` : '',
+                uncertain ? 'Abbinamento incerto' : '',
+            ].filter(Boolean).join(' — ');
+
+            const label = `⭐ ${rating.toFixed(1)}${uncertain ? '?' : ''}`;
+            const href = item.imdb_id
+                ? `https://www.imdb.com/title/${item.imdb_id}/`
+                : (item.tmdb_id ? `https://www.themoviedb.org/${item.media_type}/${item.tmdb_id}` : null);
+
+            const cls = `rating rating-${source.toLowerCase()}${uncertain ? ' rating-uncertain' : ''}`;
+            if (!href) {
+                return `<span class="${cls}" title="${escapeHtml(tip)}">${label}</span>`;
+            }
+            return `<a class="${cls}" href="${href}" target="_blank" rel="noopener"
+                       title="${escapeHtml(tip)}">${label}</a>`;
+        }
+
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            // Quotes too: the escaped text also ends up inside attributes.
+            return div.innerHTML.replace(/"/g, '&quot;');
         }
 
         // Load last import info

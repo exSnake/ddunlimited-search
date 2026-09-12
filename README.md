@@ -14,6 +14,9 @@ Un sistema di ricerca e scraping per il forum DDUnlimited, che permette di cerca
 
 - **Interfaccia web moderna**: UI responsive e intuitiva
 
+- **Voti esterni**: locandina e voto IMDb (o TMDB) accanto a ogni risultato, con filtro
+  per voto minimo e ordinamento per voto
+
 - **Reimportazione automatica**: scheduler configurabile per aggiornare i dati periodicamente
 
 - **Docker ready**: deploy facile con Docker e Docker Compose
@@ -119,6 +122,11 @@ SCRAPE_ENABLED=true
 SCRAPE_INTERVAL_DAYS=3
 SCRAPE_HOUR=2
 SCRAPE_MINUTE=0
+
+# Voti esterni
+RATINGS_ENABLED=true
+TMDB_API_KEY=la_tua_chiave_tmdb
+OMDB_API_KEY=la_tua_chiave_omdb
 ```
 
 ### Sessione browser
@@ -135,6 +143,31 @@ navighi il forum.
 I cookie ricevuti vengono provati su una pagina reale prima di essere salvati,
 quindi una sessione da ospite non puo' sovrascriverne una valida. Lo stato si
 vede nella pagina Amministrazione.
+
+### Voti IMDb e TMDB
+
+I titoli del forum vengono abbinati alle schede di [TMDB](https://www.themoviedb.org),
+che restituisce anche l'id IMDb; il voto IMDb vero e proprio arriva poi da
+[OMDb](https://www.omdbapi.com). Servono due chiavi, entrambe gratuite:
+
+- **TMDB**: `TMDB_API_KEY`, da https://www.themoviedb.org/settings/api. Senza questa
+  chiave non viene fatto alcun abbinamento.
+- **OMDb**: `OMDB_API_KEY`, da https://www.omdbapi.com/apikey.aspx. E' facoltativa:
+  senza, la UI mostra il voto TMDB. Il piano gratuito consente 1000 chiamate al
+  giorno, quindi i voti IMDb si popolano un po' per volta (`OMDB_DAILY_LIMIT`).
+
+L'abbinamento parte dal titolo ripulito (via le parentesi, i suffissi tipo
+`- Stagione 1` o `- FilmTV`, gli apostrofi al posto degli accenti) e viene pesato
+con anno e regista gia' estratti dal titolo. Sotto `RATING_MIN_CONFIDENCE` il
+risultato non viene dato per buono e finisce nella pagina **Voti**, dove si puo'
+correggerlo incollando la URL TMDB giusta, scartarlo o rimetterlo in coda.
+
+Lo scheduler ripassa ogni 6 ore e dopo ogni import. Per farlo girare a mano:
+
+```bash
+python src/ratings.py                    # solo i titoli mai cercati
+python src/ratings.py --retry-unmatched  # riprova anche quelli senza match
+```
 
 ### File pages.txt
 
@@ -167,6 +200,8 @@ Parametri:
 - `section` (opzionale): Nome della sezione
 - `page` (opzionale): Numero di pagina (default: 1)
 - `per_page` (opzionale): Risultati per pagina (default: 50, max: 100)
+- `min_rating` (opzionale): Voto minimo, da 0 a 10
+- `sort` (opzionale): `title` (default), `rating`, `year`, `year_asc`
 
 #### Statistiche
 ```
@@ -178,6 +213,16 @@ GET /api/stats
 GET /api/sections
 ```
 
+#### Voti
+```
+GET  /api/ratings/status               # configurazione, avanzamento e conteggi
+POST /api/ratings/enrich               # avvia una passata di abbinamento
+GET  /api/ratings/review?status=...    # abbinamenti da rivedere
+POST /api/ratings/match                # {title_id, reference} aggancia a una scheda TMDB
+POST /api/ratings/reject               # {title_id} scarta l'abbinamento
+POST /api/ratings/reset                # {title_id} rimette il titolo in coda
+```
+
 ## 📁 Struttura del Progetto
 
 ```
@@ -187,6 +232,7 @@ ddunlimited-search/
 │   ├── config.py          # Configurazione
 │   ├── database.py        # Gestione database
 │   ├── parser.py          # Parser HTML
+│   ├── ratings.py         # Abbinamento a TMDB e voti IMDb
 │   ├── scraper.py         # Scraper principale
 │   ├── scheduler.py       # Scheduler per reimportazione
 │   ├── server.py          # Server Flask

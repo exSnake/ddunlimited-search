@@ -50,3 +50,19 @@ POST_DETAIL_WORKERS = int(os.getenv("POST_DETAIL_WORKERS", "3"))
 # A topic is revisited once, this many days after it was created: a title can
 # still be edited in the first days, and never after that.
 POST_RECHECK_DAYS = int(os.getenv("POST_RECHECK_DAYS", "30"))
+
+# External ratings (TMDB for the match, OMDb for the IMDb vote)
+RATINGS_ENABLED = os.getenv("RATINGS_ENABLED", "true").lower() == "true"
+TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
+TMDB_LANGUAGE = os.getenv("TMDB_LANGUAGE", "it-IT")
+TMDB_REQUEST_DELAY = float(os.getenv("TMDB_REQUEST_DELAY", "0.05"))
+OMDB_API_KEY = os.getenv("OMDB_API_KEY", "")
+# The free OMDb plan allows 1000 calls a day, so the pass stops short of it.
+OMDB_DAILY_LIMIT = int(os.getenv("OMDB_DAILY_LIMIT", "900"))
+# Below this score the match is not trusted and lands in the review page.
+RATING_MIN_CONFIDENCE = float(os.getenv("RATING_MIN_CONFIDENCE", "0.75"))
+# Titles read from the database in one go while matching.
+RATING_BATCH_SIZE = int(os.getenv("RATING_BATCH_SIZE", "500"))
+# Ceiling for a single scheduled pass, so a long backlog does not hold up an
+# import for hours. The rest is picked up by the next pass.
+RATING_MAX_PER_RUN = int(os.getenv("RATING_MAX_PER_RUN", "5000"))
