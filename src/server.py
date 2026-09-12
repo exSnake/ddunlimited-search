@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 from datetime import datetime
-from flask import Flask, jsonify, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 from werkzeug.serving import WSGIRequestHandler
 
 import config
@@ -73,9 +73,15 @@ ratings_status = {
 }
 
 
-@app.route('/')
+@app.route('/v2')
+def v2_moved():
+    """The page lived here while it was being built."""
+    return redirect(url_for('v2_search', **request.args), code=301)
+
+
+@app.route('/v1')
 def index():
-    """Render the main search page."""
+    """The previous search page. Kept one release, then deleted."""
     sections = database.get_all_sections()
     stats = database.get_stats()
     return render_template('index.html', sections=sections, stats=stats)
@@ -161,9 +167,9 @@ def v2_shell() -> dict:
     }
 
 
-@app.route('/v2')
+@app.route('/')
 def v2_search():
-    """Search page, v2. Renders server-side; the filter panel is a GET form."""
+    """The search page. Renders server-side; the filter panel is a GET form."""
     q = request.args.get('q', '').strip()
     director = request.args.get('director', '').strip()
     search_type = request.args.get('search_type', 'contains').strip()
