@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DDUnlimited Search{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='v2/theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='v2/app.css') }}">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-name">DDUnlimited</div>
+      <div class="brand-sub">{{ "{:,}".format(stats.total_titles).replace(",", ".") }} titoli</div>
+    </div>
+
+    <nav class="nav-group">
+      <a class="nav-item {% if active == 'search' %}active{% endif %}" href="{{ url_for('v2_search') }}">
+        <span class="ico">⌕</span> Ricerca
+      </a>
+      <a class="nav-item" href="/sections">
+        <span class="ico">▦</span> Sezioni <span class="count">{{ stats.total_sections }}</span>
+      </a>
+      <span class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="ext">presto</span></span>
+    </nav>
+
+    <nav class="nav-group">
+      <div class="nav-label">Manutenzione</div>
+      <a class="nav-item" href="/ratings"><span class="ico">◎</span> Abbinamenti</a>
+      <a class="nav-item" href="/sections/missing-data"><span class="ico">⚠</span> Dati mancanti</a>
+      <a class="nav-item" href="/admin"><span class="ico">⚙</span> Amministrazione</a>
+    </nav>
+
+    <div class="sidebar-foot">
+      {% block sidebar_foot %}
+      <div>Interfaccia <b>v2</b></div>
+      <div>La v1 resta su <b>/</b></div>
+      {% endblock %}
+    </div>
+  </aside>
+
+  <main class="work">
+    {% block work %}{% endblock %}
+  </main>
+</div>
+
+<script>
+  // L'interruttore del vetro: backdrop-filter su una pagina piena di locandine
+  // è il costo da misurare sul vero, non da stimare.
+  (function () {
+    var key = 'ddu-v2-no-glass';
+    if (localStorage.getItem(key) === '1') document.body.classList.add('no-glass');
+    document.addEventListener('change', function (e) {
+      if (e.target.id !== 'glass-toggle') return;
+      var off = !e.target.checked;
+      document.body.classList.toggle('no-glass', off);
+      localStorage.setItem(key, off ? '1' : '0');
+    });
+    var box = document.getElementById('glass-toggle');
+    if (box) box.checked = !document.body.classList.contains('no-glass');
+  })();
+</script>
+</body>
+</html>

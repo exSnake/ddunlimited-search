@@ -1,0 +1,86 @@
+/* DDUnlimited Search v2 — vetro e profondità
+   Fondo profondo, superfici traslucide con bordo luminoso, accenti freddi per
+   l'interazione e caldi per i voti. Pensato per stare sopra le locandine. */
+
+:root {
+  /* Fondali: tre livelli di profondità, dal più lontano al più vicino */
+  --color-void: #07090f;
+  --color-bg: #0b0e17;
+  --color-bg-elevated: #111524;
+
+  /* Vetro: le superfici vivono di alpha, non di tinta piena */
+  --glass-1: rgba(255, 255, 255, 0.04);
+  --glass-2: rgba(255, 255, 255, 0.07);
+  --glass-3: rgba(255, 255, 255, 0.11);
+  --glass-blur: 20px;
+  --glass-blur-heavy: 40px;
+
+  /* Bordi luminosi: il trucco di visionOS, il bordo chiaro fa il volume */
+  --edge: rgba(255, 255, 255, 0.10);
+  --edge-strong: rgba(255, 255, 255, 0.18);
+  --edge-glow: rgba(140, 190, 255, 0.35);
+
+  /* Testo */
+  --color-text: #eef1f8;
+  --color-text-dim: #a7aec2;
+  --color-text-muted: #6f778d;
+
+  /* Accenti */
+  --color-primary: #4cc2ff;
+  --color-primary-hover: #7ad4ff;
+  --color-primary-dim: rgba(76, 194, 255, 0.14);
+  --color-rating: #f5c451;
+  --color-rating-tmdb: #01b4e4;
+  --color-owned: #3ddc97;
+  --color-owned-dim: rgba(61, 220, 151, 0.14);
+  --color-danger: #ff6b6b;
+  --color-warn: #ffb454;
+
+  /* Alone ambientale: la luce che dà profondità al fondo */
+  --ambient: radial-gradient(
+      1200px 600px at 15% -10%, rgba(76, 194, 255, 0.10), transparent 60%
+    ),
+    radial-gradient(900px 500px at 95% 0%, rgba(160, 90, 255, 0.10), transparent 55%),
+    radial-gradient(700px 700px at 60% 110%, rgba(61, 220, 151, 0.06), transparent 60%);
+
+  /* Tipografia: SF Pro su macOS via system-ui, nessuna dipendenza di rete */
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+
+  /* Spaziatura */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Forme */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-full: 9999px;
+
+  /* Ombre: profonde e morbide, mai nette */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 0 1px var(--edge-glow), 0 8px 32px rgba(76, 194, 255, 0.18);
+
+  /* Movimento: morbido come visionOS, ma corto come Arc */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 0.12s;
+  --dur: 0.2s;
+  --dur-slow: 0.4s;
+}

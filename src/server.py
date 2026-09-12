@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 import threading
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, url_for
 from werkzeug.serving import WSGIRequestHandler
 
 import config
@@ -78,6 +78,94 @@ def index():
     sections = database.get_all_sections()
     stats = database.get_stats()
     return render_template('index.html', sections=sections, stats=stats)
+
+
+V2_SEARCH_TYPES = [
+    ('contains', 'Contiene'),
+    ('starts_with', 'Inizia con'),
+    ('ends_with', 'Finisce con'),
+    ('all_words', 'Tutte le parole'),
+]
+
+V2_SORTS = [
+    ('title', 'Titolo'),
+    ('rating', 'Voto'),
+    ('year', 'Anno, dal più recente'),
+    ('year_asc', 'Anno, dal più vecchio'),
+]
+
+V2_PER_PAGE = 30
+
+
+@app.template_filter('langs')
+def v2_langs(value: str) -> str:
+    """Render the pipe-separated languages column as a compact release sigil."""
+    parts = [p.strip().upper() for p in (value or '').split('|') if p.strip()]
+    return '·'.join(parts[:3])
+
+
+@app.route('/v2')
+def v2_search():
+    """Search page, v2. Renders server-side; the filter panel is a GET form."""
+    q = request.args.get('q', '').strip()
+    director = request.args.get('director', '').strip()
+    section = request.args.get('section', '').strip()
+    search_type = request.args.get('search_type', 'contains').strip()
+    sort = request.args.get('sort', 'title').strip()
+    page = max(request.args.get('page', 1, type=int) or 1, 1)
+    min_rating = request.args.get('min_rating', type=float)
+
+    if search_type not in dict(V2_SEARCH_TYPES):
+        search_type = 'contains'
+    if sort not in dict(V2_SORTS):
+        sort = 'title'
+    if min_rating is not None and not 0 <= min_rating <= 10:
+        min_rating = None
+
+    searched = bool(q or director)
+    groups, total, total_posts = [], 0, 0
+    if searched:
+        groups, total = database.search_titles_grouped(
+            query=q, section=section or None, page=page, per_page=V2_PER_PAGE,
+            search_type=search_type, director=director or None,
+            min_rating=min_rating, sort=sort,
+        )
+        total_posts = sum(len(g['posts']) for g in groups)
+
+    params = {'q': q, 'director': director, 'section': section,
+              'search_type': search_type, 'sort': sort}
+    if min_rating is not None:
+        params['min_rating'] = min_rating
+
+    def url_without(name):
+        rest = {k: v for k, v in params.items() if k != name and v}
+        return url_for('v2_search', **rest)
+
+    chips = []
+    if section:
+        chips.append({'label': section, 'remove_url': url_without('section')})
+    if min_rating is not None:
+        chips.append({'label': f'voto ≥ {min_rating:g}', 'remove_url': url_without('min_rating')})
+    if search_type != 'contains':
+        chips.append({'label': dict(V2_SEARCH_TYPES)[search_type].lower(),
+                      'remove_url': url_without('search_type')})
+    if sort != 'title':
+        chips.append({'label': dict(V2_SORTS)[sort].lower(), 'remove_url': url_without('sort')})
+
+    pages = max((total + V2_PER_PAGE - 1) // V2_PER_PAGE, 1)
+
+    return render_template(
+        'v2/search.html',
+        q=q, director=director, section=section, search_type=search_type,
+        sort=sort, min_rating=min_rating, page=page, pages=pages,
+        groups=groups, total=total, total_posts=total_posts, searched=searched,
+        sections=database.get_all_sections(), stats=database.get_stats(),
+        search_types=V2_SEARCH_TYPES, sorts=V2_SORTS, active_chips=chips,
+        carried=[(k, v) for k, v in params.items()
+                 if k not in ('q', 'director') and v],
+        page_url=lambda n: url_for('v2_search', page=n,
+                                   **{k: v for k, v in params.items() if v}),
+    )
 
 
 @app.route('/api/search')
