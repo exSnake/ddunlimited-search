@@ -1034,37 +1034,66 @@ def api_ratings_confirm():
     return jsonify({'success': True})
 
 
-@app.route('/api/ratings/backfill-directors', methods=['POST'])
-def api_ratings_backfill_directors():
-    """Fill matched_director on matches made before the column existed."""
+def _run_in_background(label, work):
+    """Run a long ratings job on a thread, reporting through ratings_status.
+
+    These jobs make one TMDB request per title, so holding the HTTP request
+    open for hundreds of them leaves the page with nothing to say.
+    """
+    global ratings_status
+
+    if ratings_status['running']:
+        return jsonify({'error': "Un lavoro sui voti e' gia' in corso"}), 409
     if not config.TMDB_API_KEY:
         return jsonify({'error': 'TMDB_API_KEY non configurata'}), 400
 
-    data = request.get_json(silent=True) or {}
-    status = str(data.get('status', 'low_confidence')).strip()
-    limit = min(max(int(data.get('limit', 400) or 400), 1), 2000)
+    ratings_status['running'] = True
+    ratings_status['message'] = f'{label}: avvio...'
 
-    try:
-        filled, seen = ratings.backfill_directors(status=status, limit=limit)
-    except ratings.RatingsError as e:
-        return jsonify({'error': str(e)}), 502
+    def runner():
+        global ratings_status
+        try:
+            ratings_status['message'] = work(
+                lambda msg: ratings_status.__setitem__('message', msg))
+        except Exception as e:
+            web_logger.error(f"Errore in {label}: {e}", exc_info=True)
+            ratings_status['message'] = f'Errore: {e}'
+        finally:
+            ratings_status['running'] = False
 
-    return jsonify({'success': True, 'filled': filled, 'seen': seen})
+    threading.Thread(target=runner, daemon=True).start()
+    return jsonify({'success': True, 'started': True})
 
 
 @app.route('/api/ratings/rematch-article', methods=['POST'])
 def api_ratings_rematch_article():
     """Score again the titles that moved the article to the end."""
-    if not config.TMDB_API_KEY:
-        return jsonify({'error': 'TMDB_API_KEY non configurata'}), 400
+    limit = min(max(int((request.get_json(silent=True) or {}).get('limit', 500) or 500), 1), 3000)
 
+    def work(progress):
+        counts = ratings.rematch_trailing_article(limit=limit, status_callback=progress)
+        left = database.count_low_confidence_with_trailing_article()
+        return (f"Rilancio finito: {counts['matched']} risolti su {counts['processed']}, "
+                f"{left} ancora da riprovare")
+
+    return _run_in_background('Rilancio articolo', work)
+
+
+@app.route('/api/ratings/backfill-directors', methods=['POST'])
+def api_ratings_backfill_directors():
+    """Fill matched_director on matches made before the column existed."""
     data = request.get_json(silent=True) or {}
-    limit = min(max(int(data.get('limit', 500) or 500), 1), 3000)
-    try:
-        counts = ratings.rematch_trailing_article(limit=limit)
-    except ratings.RatingsError as e:
-        return jsonify({'error': str(e)}), 502
-    return jsonify({'success': True, **counts})
+    status = str(data.get('status', 'low_confidence')).strip()
+    limit = min(max(int(data.get('limit', 400) or 400), 1), 2000)
+
+    def work(progress):
+        filled, seen = ratings.backfill_directors(status=status, limit=limit,
+                                                  status_callback=progress)
+        left = database.count_ratings_missing_director(status)
+        return (f"Registi: {filled} trovati su {seen} chiesti, "
+                f"{left} ancora senza")
+
+    return _run_in_background('Registi', work)
 
 
 @app.route('/api/ratings/reject', methods=['POST'])

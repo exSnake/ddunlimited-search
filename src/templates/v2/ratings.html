@@ -152,45 +152,48 @@
 
     select(0);
 
-    function longJob(btnId, outId, url, body, label) {
+    // I due lavori parlano con TMDB una volta per titolo: partono in background
+    // e la pagina chiede lo stato, invece di restare ferma su una scritta.
+    function longJob(btnId, outId, url, body) {
       var btn = document.getElementById(btnId);
       if (!btn) return;
+      var out = document.getElementById(outId);
+
+      function poll() {
+        fetch('/api/ratings/status')
+          .then(function (r) { return r.json(); })
+          .then(function (s) {
+            out.textContent = s.message || 'in corso…';
+            if (s.running) return setTimeout(poll, 1500);
+            btn.disabled = false;
+            setTimeout(function () { location.reload(); }, 1800);
+          })
+          .catch(function () {
+            out.textContent = 'stato non raggiungibile, ricarica la pagina';
+            btn.disabled = false;
+          });
+      }
+
       btn.addEventListener('click', function () {
-        var out = document.getElementById(outId);
         btn.disabled = true;
-        out.textContent = label;
+        out.textContent = 'avvio…';
         fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body)})
           .then(function (r) { return r.json(); })
           .then(function (o) {
             if (o.error) { out.textContent = o.error; btn.disabled = false; return; }
-            out.textContent = (o.filled !== undefined)
-              ? o.filled + ' su ' + o.seen + ' — ricarico'
-              : o.matched + ' risolti su ' + o.processed + ' — ricarico';
-            setTimeout(function () { location.reload(); }, 900);
+            poll();
+          })
+          .catch(function () {
+            out.textContent = 'non sono riuscito ad avviarlo';
+            btn.disabled = false;
           });
       });
     }
 
-    longJob('rematch', 'rematch-out', '/api/ratings/rematch-article',
-            {limit: 500}, 'chiedo a TMDB…');
-
-    var fill = document.getElementById('backfill');
-    if (fill) fill.addEventListener('click', function () {
-      var out = document.getElementById('backfill-out');
-      fill.disabled = true;
-      out.textContent = 'chiedo a TMDB…';
-      fetch('/api/ratings/backfill-directors', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({status: '{{ status }}', limit: 400})
-      }).then(function (r) { return r.json(); })
-        .then(function (o) {
-          out.textContent = o.error || (o.filled + ' registi su ' + o.seen + ' — ricarico');
-          if (!o.error) setTimeout(function () { location.reload(); }, 900);
-          else fill.disabled = false;
-        });
-    });
+    longJob('rematch', 'rematch-out', '/api/ratings/rematch-article', {limit: 500});
+    longJob('backfill', 'backfill-out', '/api/ratings/backfill-directors',
+            {status: '{{ status }}', limit: 400});
   })();
 </script>
 {% endblock %}
