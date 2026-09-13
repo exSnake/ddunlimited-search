@@ -428,6 +428,46 @@ def refresh_imdb_vote(title_id: int, imdb_id: str) -> bool:
     return rating is not None
 
 
+def rematch_trailing_article(limit: int = 500, status_callback=None) -> dict:
+    """Look again at titles that scored low only because of the moved article.
+
+    They were matched before the article variant existed, so the score was
+    string similarity against a form no catalogue uses. Nothing else about
+    them changed, which is why only these are worth the requests.
+    """
+    rows = database.get_low_confidence_with_trailing_article(limit)
+    counts = {'processed': 0, 'matched': 0, 'low_confidence': 0, 'unmatched': 0}
+    if not rows:
+        return counts
+
+    client = TMDBClient()
+    for row in rows:
+        try:
+            match = match_title(client, row)
+        except RatingsError:
+            raise
+        except Exception as exc:
+            logger.error(f"Errore sul titolo {row['id']} ({row['title']}): {exc}",
+                         exc_info=True)
+            match = None
+
+        if match:
+            status = ('matched' if match['confidence'] >= config.RATING_MIN_CONFIDENCE
+                      else 'low_confidence')
+            database.save_rating(row['id'], status, **match)
+        else:
+            status = 'unmatched'
+            database.save_rating(row['id'], status)
+
+        counts[status] += 1
+        counts['processed'] += 1
+        if status_callback and counts['processed'] % 25 == 0:
+            status_callback(f"Rilancio: {counts['processed']}/{len(rows)}")
+
+    logger.info(f"Rilancio articolo spostato: {counts} ({client.calls} richieste)")
+    return counts
+
+
 def match_pending(limit: Optional[int] = None, retry_unmatched: bool = False,
                   after_id: int = 0, status_callback=None) -> dict:
     """Match against TMDB the titles that still need a lookup."""
