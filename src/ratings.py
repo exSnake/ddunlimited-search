@@ -221,14 +221,29 @@ def candidate_fields(media_type: str, candidate: dict) -> tuple[str, str, Option
     return name, original, year
 
 
+def candidate_forms(name: str, original: str) -> list[str]:
+    """Every spelling of a candidate worth comparing against.
+
+    TMDB writes the Italian name of a series as "Italiano - English", so a
+    query holding only the Italian half scores against a string twice its
+    length. Each half is offered on its own as well.
+    """
+    forms = [name, original]
+    for value in (name, original):
+        if value and ' - ' in value:
+            forms.extend(part.strip() for part in value.split(' - ', 1))
+    return forms
+
+
 def score_candidate(query: str, year: Optional[int], media_type: str, candidate: dict) -> float:
     """How much a search result looks like the title we are holding, 0 to 1."""
     name, original, cand_year = candidate_fields(media_type, candidate)
     wanted = normalize_for_compare(query)
 
     ratio = max(
-        SequenceMatcher(None, wanted, normalize_for_compare(name)).ratio() if name else 0.0,
-        SequenceMatcher(None, wanted, normalize_for_compare(original)).ratio() if original else 0.0,
+        (SequenceMatcher(None, wanted, normalize_for_compare(form)).ratio()
+         for form in candidate_forms(name, original) if form),
+        default=0.0,
     )
 
     score = ratio * 0.8
