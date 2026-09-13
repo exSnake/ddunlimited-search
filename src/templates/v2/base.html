@@ -39,6 +39,9 @@
         <span class="count">{{ "{:,}".format(nav_counts.missing).replace(",", ".") }}</span>
       </a>
       <a class="nav-item {% if active == 'admin' %}active{% endif %}" href="{{ url_for('admin_page') }}"><span class="ico">⚙</span> Amministrazione</a>
+      <a class="nav-item" href="{{ grafana_logs_url }}" target="_blank" rel="noopener">
+        <span class="ico">↗</span> Log su Grafana <span class="ext">esterno</span>
+      </a>
     </nav>
 
     <div class="sidebar-foot">

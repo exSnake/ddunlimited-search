@@ -32,9 +32,10 @@ web_file_handler = logging.FileHandler('logs/web.log', encoding='utf-8')
 web_file_handler.setLevel(logging.INFO)
 web_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
-# Console handler (optional, can be removed if you don't want web logs on console)
+# Alloy collects the container's stdout into Loki, which is where the logs are
+# read now: anything held back from here is invisible in Grafana.
 web_console_handler = logging.StreamHandler(sys.stdout)
-web_console_handler.setLevel(logging.WARNING)  # Only warnings and errors on console
+web_console_handler.setLevel(logging.INFO)
 web_console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
 web_logger.addHandler(web_file_handler)
@@ -77,14 +78,6 @@ ratings_status = {
 def v2_moved():
     """The page lived here while it was being built."""
     return redirect(url_for('v2_search', **request.args), code=301)
-
-
-@app.route('/v1')
-def index():
-    """The previous search page. Kept one release, then deleted."""
-    sections = database.get_all_sections()
-    stats = database.get_stats()
-    return render_template('index.html', sections=sections, stats=stats)
 
 
 V2_SEARCH_TYPES = [
@@ -165,6 +158,7 @@ def v2_shell() -> dict:
             'done': rated,
             'total': stats['total_titles'],
         },
+        'grafana_logs_url': config.GRAFANA_LOGS_URL,
     }
 
 
@@ -374,12 +368,6 @@ def api_stats():
     return jsonify(stats)
 
 
-@app.route('/logs')
-def logs_page():
-    """Render the logs page."""
-    return render_template('logs.html')
-
-
 @app.route('/admin')
 def admin_page():
     """Render the admin page."""
@@ -431,49 +419,6 @@ def missing_data_page():
         pages=max((total + 49) // 50, 1),
         section=section, sections=database.get_all_sections(),
         tiles=tiles, **v2_shell())
-
-
-@app.route('/api/logs')
-def api_logs():
-    """
-    Get log file contents.
-    
-    Query parameters:
-        file: 'scraper', 'scheduler', or 'web' (default: 'scraper')
-        lines: Number of lines to return from the end (default: 500)
-    """
-    log_file = request.args.get('file', 'scraper').strip()
-    lines = request.args.get('lines', 500, type=int)
-    offset = request.args.get('offset', 0, type=int)  # lines to skip from the end
-
-    if log_file not in ['scraper', 'scheduler', 'web']:
-        return jsonify({'error': 'Invalid log file. Use "scraper", "scheduler", or "web"'}), 400
-
-    log_path = f'logs/{log_file}.log'
-
-    try:
-        if not os.path.exists(log_path):
-            return jsonify({'content': '', 'file': log_file, 'total_lines': 0})
-
-        with open(log_path, 'r', encoding='utf-8') as f:
-            all_lines = f.readlines()
-
-        total = len(all_lines)
-        # offset=0 → last N lines; offset=N → skip last N, take previous N
-        end = total - offset if offset < total else 0
-        start = max(0, end - lines)
-        content_lines = all_lines[start:end]
-        content = ''.join(content_lines)
-
-        return jsonify({
-            'content': content,
-            'file': log_file,
-            'total_lines': total,
-            'start_line': start + 1,
-            'end_line': end,
-        })
-    except Exception as e:
-        return jsonify({'error': f'Error reading log file: {str(e)}'}), 500
 
 
 @app.route('/api/pages', methods=['GET'])

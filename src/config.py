@@ -44,6 +44,13 @@ PAGES_FILE = os.getenv("PAGES_FILE", "pages.txt")
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
+# I log si leggono in Grafana: Alloy raccoglie lo stdout dei container in Loki.
+# La sidebar ci porta con un collegamento esterno, l'app non li serve piu'.
+GRAFANA_LOGS_URL = os.getenv(
+    "GRAFANA_LOGS_URL",
+    "http://grafana.lan/d/ddunlimited-search/ddunlimited-search"
+)
+
 # Post detail scraping
 SCRAPE_POST_DETAILS = os.getenv("SCRAPE_POST_DETAILS", "true").lower() == "true"
 POST_DETAIL_WORKERS = int(os.getenv("POST_DETAIL_WORKERS", "3"))
