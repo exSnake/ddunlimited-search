@@ -322,7 +322,8 @@ def match_title(client: TMDBClient, row: dict) -> Optional[dict]:
     return build_match(best_type, details, confidence)
 
 
-def backfill_directors(status: str = 'low_confidence', limit: int = 400) -> tuple[int, int]:
+def backfill_directors(status: str = 'low_confidence', limit: int = 400,
+                       status_callback=None) -> tuple[int, int]:
     """Fill matched_director on matches made before the column existed.
 
     One TMDB details call per title, the same one the matcher makes, so the
@@ -334,14 +335,15 @@ def backfill_directors(status: str = 'low_confidence', limit: int = 400) -> tupl
 
     client = TMDBClient()
     filled = 0
-    for row in rows:
+    for seen, row in enumerate(rows, 1):
         details = client.details(row['media_type'] or 'movie', row['tmdb_id'])
-        if not details:
-            continue
-        names = directors_of(row['media_type'] or 'movie', details)
-        if names:
-            database.set_matched_director(row['title_id'], ', '.join(names[:2]))
-            filled += 1
+        if details:
+            names = directors_of(row['media_type'] or 'movie', details)
+            if names:
+                database.set_matched_director(row['title_id'], ', '.join(names[:2]))
+                filled += 1
+        if status_callback and seen % 25 == 0:
+            status_callback(f'Registi: {seen}/{len(rows)}, {filled} trovati')
     return filled, len(rows)
 
 
@@ -461,8 +463,9 @@ def rematch_trailing_article(limit: int = 500, status_callback=None) -> dict:
 
         counts[status] += 1
         counts['processed'] += 1
-        if status_callback and counts['processed'] % 25 == 0:
-            status_callback(f"Rilancio: {counts['processed']}/{len(rows)}")
+        if status_callback and counts['processed'] % 10 == 0:
+            status_callback(f"Rilancio: {counts['processed']}/{len(rows)} titoli, "
+                            f"{counts['matched']} risolti")
 
     logger.info(f"Rilancio articolo spostato: {counts} ({client.calls} richieste)")
     return counts
