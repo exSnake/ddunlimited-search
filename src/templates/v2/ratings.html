@@ -46,6 +46,11 @@
   </div>
 {% endif %}
 
+<div class="queue-notice job" id="job-status" hidden>
+  <span class="spinner"></span>
+  <span id="job-message">…</span>
+</div>
+
 <div class="queue" id="queue">
   {% for row in rows %}
     <div class="qrow" data-id="{{ row.id }}" tabindex="0">
@@ -152,48 +157,72 @@
 
     select(0);
 
-    // I due lavori parlano con TMDB una volta per titolo: partono in background
-    // e la pagina chiede lo stato, invece di restare ferma su una scritta.
-    function longJob(btnId, outId, url, body) {
-      var btn = document.getElementById(btnId);
-      if (!btn) return;
-      var out = document.getElementById(outId);
+    // I lavori girano sul server: la pagina si riaggancia allo stato anche
+    // se la lasci e torni, invece di mostrare l'avanzamento solo a chi ha
+    // premuto il pulsante.
+    var jobBox = document.getElementById('job-status');
+    var jobMsg = document.getElementById('job-message');
+    var buttons = ['rematch', 'backfill'];
+    var watching = false;
 
-      function poll() {
+    function setBusy(busy) {
+      buttons.forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b) b.disabled = busy;
+      });
+      jobBox.hidden = !busy;
+    }
+
+    function watch(reloadWhenDone) {
+      if (watching) return;
+      watching = true;
+      (function poll() {
         fetch('/api/ratings/status')
           .then(function (r) { return r.json(); })
           .then(function (s) {
-            out.textContent = s.message || 'in corso…';
-            if (s.running) return setTimeout(poll, 1500);
-            btn.disabled = false;
-            setTimeout(function () { location.reload(); }, 1800);
+            jobMsg.textContent = s.message || 'in corso…';
+            if (s.running) { setBusy(true); return setTimeout(poll, 1500); }
+            watching = false;
+            setBusy(false);
+            jobBox.hidden = false;
+            if (reloadWhenDone) setTimeout(function () { location.reload(); }, 1800);
           })
           .catch(function () {
-            out.textContent = 'stato non raggiungibile, ricarica la pagina';
-            btn.disabled = false;
+            watching = false;
+            jobMsg.textContent = 'stato non raggiungibile, ricarica la pagina';
+            setBusy(false);
           });
-      }
+      })();
+    }
 
+    function start(btnId, url, body) {
+      var btn = document.getElementById(btnId);
+      if (!btn) return;
       btn.addEventListener('click', function () {
-        btn.disabled = true;
-        out.textContent = 'avvio…';
+        setBusy(true);
+        jobMsg.textContent = 'avvio…';
         fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body)})
           .then(function (r) { return r.json(); })
           .then(function (o) {
-            if (o.error) { out.textContent = o.error; btn.disabled = false; return; }
-            poll();
+            if (o.error) { jobMsg.textContent = o.error; setBusy(false); return; }
+            watch(true);
           })
           .catch(function () {
-            out.textContent = 'non sono riuscito ad avviarlo';
-            btn.disabled = false;
+            jobMsg.textContent = 'non sono riuscito ad avviarlo';
+            setBusy(false);
           });
       });
     }
 
-    longJob('rematch', 'rematch-out', '/api/ratings/rematch-article', {limit: 500});
-    longJob('backfill', 'backfill-out', '/api/ratings/backfill-directors',
-            {status: '{{ status }}', limit: 400});
+    start('rematch', '/api/ratings/rematch-article', {limit: 500});
+    start('backfill', '/api/ratings/backfill-directors',
+          {status: '{{ status }}', limit: 400});
+
+    // Al caricamento: se un lavoro e' gia' in corso, riprendilo.
+    fetch('/api/ratings/status')
+      .then(function (r) { return r.json(); })
+      .then(function (s) { if (s.running) { setBusy(true); watch(true); } });
   })();
 </script>
 {% endblock %}
