@@ -118,12 +118,34 @@ QUALITY_PATTERNS = [
 ]
 
 
+# One spelling per quality. Three places used to write this column and only
+# one uppercased, so '720p' and '720P' both existed, as did '4K' and '2160P'.
+QUALITY_CANONICAL = {
+    '2160P': '4K', '4K': '4K', 'UHD': '4K',
+    '1080P': '1080p', '1080I': '1080i',
+    '720P': '720p', '720I': '720i',
+    'HDTV': 'HDTV',
+    'WEB': 'WEB', 'WEB-DL': 'WEB', 'WEBDL': 'WEB', 'WEBRIP': 'WEB',
+    'BLURAY': 'BluRay', 'BDRIP': 'BluRay', 'BRRIP': 'BluRay',
+    'DVD': 'DVD', 'DVDRIP': 'DVD',
+    'SD': 'SD',
+    'CAM': 'CAM', 'HDCAM': 'CAM', 'TS': 'TS', 'TELESYNC': 'TS',
+}
+
+
+def normalize_quality(value: str | None) -> str | None:
+    """The one spelling for a quality, or the value untouched if unknown."""
+    if not value:
+        return None
+    return QUALITY_CANONICAL.get(value.strip().upper(), value.strip())
+
+
 def extract_quality(text: str) -> str | None:
     """Extract quality information from text."""
     for pattern in QUALITY_PATTERNS:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return match.group(1).upper()
+            return normalize_quality(match.group(1))
     return None
 
 
@@ -169,11 +191,11 @@ def extract_quality_from_icons(parent_tag) -> str | None:
     for img in parent_tag.find_all('img'):
         src = img.get('src', '').lower()
         if '4k' in src or 'uhd' in src:
-            return '4K'
+            return normalize_quality('4K')
         if 'full.hd' in src or 'fullhd' in src:
-            return '1080p'
+            return normalize_quality('1080p')
         if '.hd.' in src:
-            return '720p'
+            return normalize_quality('720p')
     return None
 
 
@@ -414,13 +436,13 @@ def parse_page(html: str, section: str) -> list[dict]:
         if not quality:
             section_lower = section.lower()
             if '4k' in section_lower or 'ultrahd' in section_lower:
-                quality = '4K'
+                quality = normalize_quality('4K')
             elif 'fullhd' in section_lower or '1080' in section_lower:
-                quality = '1080p'
+                quality = normalize_quality('1080p')
             elif 'hd' in section_lower:
-                quality = '720p'
+                quality = normalize_quality('720p')
             elif 'sd' in section_lower:
-                quality = 'SD'
+                quality = normalize_quality('SD')
 
         metadata = extract_metadata(full_text)
 

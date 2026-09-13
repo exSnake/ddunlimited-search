@@ -256,6 +256,7 @@ def build_match(media_type: str, details: dict, confidence: float) -> dict:
         imdb_id = details.get('imdb_id')
 
     votes = details.get('vote_count') or 0
+    credited = directors_of(media_type, details)
     return {
         'media_type': media_type,
         'tmdb_id': details.get('id'),
@@ -265,6 +266,7 @@ def build_match(media_type: str, details: dict, confidence: float) -> dict:
         'poster_path': details.get('poster_path'),
         'matched_title': name,
         'matched_year': int(released[:4]) if released[:4].isdigit() else None,
+        'matched_director': ', '.join(credited[:2]) or None,
         'confidence': round(confidence, 3),
     }
 

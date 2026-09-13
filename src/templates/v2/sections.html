@@ -1,0 +1,23 @@
+{% extends "v2/base.html" %}
+{% set active = 'sections' %}
+{% block title %}Sezioni · DDUnlimited{% endblock %}
+
+{% block work %}
+<div class="page-head">
+  <h1>Sezioni</h1>
+  <p>Le {{ sections|length }} sezioni del forum. Il numero grande sono i post;
+     i film sono meno, perché uno stesso film torna in più post.</p>
+</div>
+
+<div class="section-grid">
+  {% for s in sections %}
+    <a class="section-card" href="{{ url_for('v2_search', section=s.section) }}">
+      <div class="section-name">{{ s.section }}</div>
+      <div class="section-count">{{ "{:,}".format(s.titles).replace(",", ".") }}</div>
+      <div class="section-sub">
+        {% if s.films %}{{ "{:,}".format(s.films).replace(",", ".") }} film abbinati{% else %}nessun abbinamento{% endif %}
+      </div>
+    </a>
+  {% endfor %}
+</div>
+{% endblock %}

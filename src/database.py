@@ -121,6 +121,27 @@ def extract_director_and_year(title: str) -> Tuple[Optional[str], Optional[int],
     return None, None, first_letter
 
 
+def _normalize_stored_qualities(cursor) -> int:
+    """Rewrite quality values that differ only in spelling.
+
+    Runs at startup and is idempotent: after the first pass it finds nothing
+    to do, because the parser now writes the canonical form itself.
+    """
+    import parser
+
+    cursor.execute(
+        "SELECT DISTINCT quality FROM titles WHERE quality IS NOT NULL AND quality != ''"
+    )
+    changed = 0
+    for (stored,) in cursor.fetchall():
+        canonical = parser.normalize_quality(stored)
+        if canonical and canonical != stored:
+            cursor.execute("UPDATE titles SET quality = ? WHERE quality = ?",
+                           (canonical, stored))
+            changed += cursor.rowcount
+    return changed
+
+
 def init_db():
     """Initialize the database schema."""
     # Create data directory if it doesn't exist
@@ -235,8 +256,16 @@ def init_db():
                 FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
             )
         """)
+        # The director TMDB returned for the match. It comes free inside the
+        # credits we already request, and the review queue puts it beside ours.
+        cursor.execute("PRAGMA table_info(title_ratings)")
+        rating_columns = [row[1] for row in cursor.fetchall()]
+        if 'matched_director' not in rating_columns:
+            cursor.execute("ALTER TABLE title_ratings ADD COLUMN matched_director TEXT")
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_status ON title_ratings(match_status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_imdb_id ON title_ratings(imdb_id)")
+        _normalize_stored_qualities(cursor)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_rating_score
             ON title_ratings(COALESCE(imdb_rating, tmdb_rating))
@@ -435,8 +464,11 @@ def _build_search_filter(
         params.append(section)
 
     if sections:
-        base_query += f" AND {SECTION_SQL} IN ({','.join('?' * len(sections))})"
-        params.extend(sections)
+        # Either the collapsed name the panel shows, or a real forum section:
+        # the sections page links straight to one of the nine.
+        holes = ','.join('?' * len(sections))
+        base_query += f" AND ({SECTION_SQL} IN ({holes}) OR section IN ({holes}))"
+        params.extend(sections * 2)
 
     if qualities:
         base_query += f" AND {QUALITY_SQL} IN ({','.join('?' * len(qualities))})"
@@ -737,6 +769,23 @@ def _new_group(key: str, post: dict) -> dict:
         "match_status": post.get("match_status"),
         "posts": [],
     }
+
+
+def get_section_counts() -> list[dict]:
+    """The real forum sections with how many live titles each holds."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT section, COUNT(*) AS titles,
+                   COUNT(DISTINCT r.tmdb_id) AS films
+            FROM titles LEFT JOIN title_ratings r ON r.title_id = titles.id
+            WHERE deleted_at IS NULL AND section IS NOT NULL
+            GROUP BY section
+            ORDER BY titles DESC
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def get_all_sections() -> list[str]:
@@ -1157,7 +1206,7 @@ RATING_JOIN = "LEFT JOIN title_ratings r ON r.title_id = titles.id"
 RATING_COLUMNS = """
     r.media_type, r.tmdb_id, r.imdb_id, r.tmdb_rating, r.tmdb_votes,
     r.imdb_rating, r.imdb_votes, r.poster_path, r.matched_title,
-    r.matched_year, r.confidence, r.match_status
+    r.matched_year, r.matched_director, r.confidence, r.match_status
 """
 
 
@@ -1195,7 +1244,7 @@ def save_rating(title_id: int, match_status: str, **fields) -> None:
     """Write the outcome of a lookup, replacing any previous one."""
     columns = ['media_type', 'tmdb_id', 'imdb_id', 'tmdb_rating', 'tmdb_votes',
                'imdb_rating', 'imdb_votes', 'poster_path', 'matched_title',
-               'matched_year', 'confidence']
+               'matched_year', 'matched_director', 'confidence']
     values = [fields.get(c) for c in columns]
 
     with get_db() as conn:
