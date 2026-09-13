@@ -383,7 +383,7 @@ def logs_page():
 @app.route('/admin')
 def admin_page():
     """Render the admin page."""
-    return render_template('admin.html')
+    return render_template('v2/admin.html', **v2_shell())
 
 
 @app.route('/sections')
@@ -408,9 +408,29 @@ def section_detail_page(section):
 
 @app.route('/sections/missing-data')
 def missing_data_page():
-    """Render the page for titles with missing director/year data."""
-    sections = database.get_all_sections()
-    return render_template('missing_data.html', sections=sections)
+    """Titles the parser could not read a director or a year out of."""
+    section = request.args.get('section', '').strip() or None
+    page = max(request.args.get('page', 1, type=int) or 1, 1)
+
+    rows, total = database.get_titles_with_missing_data(
+        page=page, per_page=50, section=section)
+    counts = database.get_missing_data_counts()
+
+    tiles = [
+        {'count': counts['both'], 'label': 'senza regista né anno',
+         'sub': 'il caso peggiore: niente su cui abbinare'},
+        {'count': counts['director_only'], 'label': 'senza regista',
+         'sub': "l'anno da solo non basta a distinguere"},
+        {'count': counts['year_only'], 'label': 'senza anno',
+         'sub': 'il regista regge, ma i remake confondono'},
+    ]
+
+    return render_template(
+        'v2/missing_data.html',
+        rows=rows, total=total, page=page,
+        pages=max((total + 49) // 50, 1),
+        section=section, sections=database.get_all_sections(),
+        tiles=tiles, **v2_shell())
 
 
 @app.route('/api/logs')
@@ -866,11 +886,57 @@ def api_missing_data():
     })
 
 
+V2_REVIEW_TABS = [
+    ('low_confidence', 'Da rivedere'),
+    ('unmatched', 'Senza match'),
+    ('rejected', 'Scartati'),
+    ('manual', 'Corretti a mano'),
+]
+
+V2_REVIEW_PER_PAGE = 40
+
+
+def _directors_clash(ours: str, theirs: str) -> bool:
+    """True when the two sides name different people.
+
+    Same normalisation the matcher uses for its director bonus: last token,
+    lowercased and unaccented. A signal, not a verdict — it misreads names
+    that are not latin and films credited to more than one director.
+    """
+    if not ours or not theirs:
+        return False
+    mine = ratings._person_key(ours)
+    others = {ratings._person_key(name) for name in theirs.split(',')}
+    return bool(mine) and bool(others) and mine not in others
+
+
 @app.route('/ratings')
 def ratings_page():
-    """Render the page to review the matches against TMDB."""
-    sections = database.get_all_sections()
-    return render_template('ratings.html', sections=sections)
+    """The review queue: forum on the left, TMDB on the right."""
+    status = request.args.get('status', 'low_confidence').strip()
+    if status not in dict(V2_REVIEW_TABS):
+        status = 'low_confidence'
+    page = max(request.args.get('page', 1, type=int) or 1, 1)
+
+    rows, total = database.get_rating_matches(
+        page=page, per_page=V2_REVIEW_PER_PAGE, status=status)
+    for row in rows:
+        row['clash'] = _directors_clash(row.get('director'),
+                                        row.get('matched_director'))
+
+    stats = database.get_rating_stats()
+    counts = {'low_confidence': stats['low_confidence'],
+              'unmatched': stats['unmatched'],
+              'rejected': stats['rejected'],
+              'manual': stats['matched']}
+
+    return render_template(
+        'v2/ratings.html',
+        rows=rows, status=status, page=page,
+        pages=max((total + V2_REVIEW_PER_PAGE - 1) // V2_REVIEW_PER_PAGE, 1),
+        tabs=[(k, label, counts.get(k, 0)) for k, label in V2_REVIEW_TABS],
+        missing_directors=database.count_ratings_missing_director(status),
+        **v2_shell())
 
 
 @app.route('/api/ratings/status')
@@ -1005,6 +1071,37 @@ def api_ratings_match():
         ratings.refresh_imdb_vote(int(title_id), match['imdb_id'])
 
     return jsonify({'success': True, 'match': match})
+
+
+@app.route('/api/ratings/confirm', methods=['POST'])
+def api_ratings_confirm():
+    """Accept the match already on file, without asking TMDB again."""
+    data = request.get_json(silent=True) or {}
+    title_id = data.get('title_id')
+    if not title_id:
+        return jsonify({'error': 'Serve "title_id"'}), 400
+
+    if not database.confirm_rating(int(title_id)):
+        return jsonify({'error': 'Nessun abbinamento da confermare'}), 404
+    return jsonify({'success': True})
+
+
+@app.route('/api/ratings/backfill-directors', methods=['POST'])
+def api_ratings_backfill_directors():
+    """Fill matched_director on matches made before the column existed."""
+    if not config.TMDB_API_KEY:
+        return jsonify({'error': 'TMDB_API_KEY non configurata'}), 400
+
+    data = request.get_json(silent=True) or {}
+    status = str(data.get('status', 'low_confidence')).strip()
+    limit = min(max(int(data.get('limit', 400) or 400), 1), 2000)
+
+    try:
+        filled, seen = ratings.backfill_directors(status=status, limit=limit)
+    except ratings.RatingsError as e:
+        return jsonify({'error': str(e)}), 502
+
+    return jsonify({'success': True, 'filled': filled, 'seen': seen})
 
 
 @app.route('/api/ratings/reject', methods=['POST'])

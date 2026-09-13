@@ -1,0 +1,162 @@
+{% extends "v2/base.html" %}
+{% set active = 'ratings' %}
+{% block title %}Abbinamenti · DDUnlimited{% endblock %}
+
+{% block work %}
+<div class="page-head">
+  <h1>Abbinamenti</h1>
+  <p>Il titolo del forum a sinistra, quello che TMDB propone a destra.
+     I due registi stanno uno di fronte all'altro: quando non coincidono
+     diventano rossi, e l'errore si vede prima di leggere il titolo.</p>
+</div>
+
+<div class="queue-bar">
+  <div class="queue-tabs">
+    {% for key, label, count in tabs %}
+      <a class="queue-tab {% if key == status %}on{% endif %}"
+         href="{{ url_for('ratings_page', status=key) }}">
+        {{ label }} <span class="n">{{ "{:,}".format(count).replace(",", ".") }}</span>
+      </a>
+    {% endfor %}
+  </div>
+  <div class="queue-keys">
+    <span class="kbd">J</span><span class="kbd">K</span> muovi
+    <span class="kbd">↵</span> conferma
+    <span class="kbd">⌫</span> scarta
+  </div>
+</div>
+
+{% if missing_directors %}
+  <div class="queue-notice">
+    {{ "{:,}".format(missing_directors).replace(",", ".") }} abbinamenti sono stati fatti
+    prima che il regista venisse registrato, quindi la colonna che conta è vuota.
+    <button type="button" id="backfill">Chiedi i registi a TMDB</button>
+    <span id="backfill-out"></span>
+  </div>
+{% endif %}
+
+<div class="queue" id="queue">
+  {% for row in rows %}
+    <div class="qrow" data-id="{{ row.id }}" tabindex="0">
+      <div class="qside">
+        <div class="poster poster-empty small">DD</div>
+        <div class="qtext">
+          <div class="qtitle">{{ row.title }}</div>
+          <div class="qsub"><span class="{{ 'dir-clash' if row.clash else '' }}">{{ row.director or 'regista ignoto' }}</span>{% if row.year %}, {{ row.year }}{% endif %} · {{ row.section }}</div>
+        </div>
+      </div>
+
+      <div class="qarrow">→</div>
+
+      <div class="qside">
+        {% if row.poster_path %}
+          <img class="poster small" loading="lazy" alt=""
+               src="https://image.tmdb.org/t/p/w92{{ row.poster_path }}">
+        {% else %}
+          <div class="poster poster-empty small">▦</div>
+        {% endif %}
+        <div class="qtext">
+          <div class="qtitle">
+            {{ row.matched_title or '—' }}
+            {% if row.matched_year %}<span class="year">{{ row.matched_year }}</span>{% endif %}
+          </div>
+          <div class="qsub"><span class="{{ 'dir-clash' if row.clash else '' }}">{{ row.matched_director or 'regista non registrato' }}</span>{% if row.confidence is not none %} · <span class="conf"><span class="conf-bar"><i style="width: {{ (row.confidence * 100)|round|int }}%"></i></span>{{ "%.2f"|format(row.confidence) }}</span>{% endif %}</div>
+        </div>
+      </div>
+
+      <div class="qacts">
+        <button class="btn btn-confirm" data-act="confirm" title="Conferma (↵)">✓</button>
+        <button class="btn btn-drop" data-act="reject" title="Scarta (⌫)">✕</button>
+        <a class="btn" href="{{ row.url }}" target="_blank" rel="noopener" title="Apri il post">↗</a>
+        {% if row.tmdb_id %}
+          <a class="btn" title="Apri su TMDB" target="_blank" rel="noopener"
+             href="https://www.themoviedb.org/{{ row.media_type or 'movie' }}/{{ row.tmdb_id }}">TMDB</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% if not rows %}
+  <div class="empty">
+    <h2>Niente da rivedere</h2>
+    <p>Questa coda è vuota.</p>
+  </div>
+{% endif %}
+
+{% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a href="{{ url_for('ratings_page', status=status, page=page - 1) }}">← Precedente</a>{% endif %}
+    <span>{{ page }} di {{ pages }}</span>
+    {% if page < pages %}<a href="{{ url_for('ratings_page', status=status, page=page + 1) }}">Successiva →</a>{% endif %}
+  </div>
+{% endif %}
+
+<script>
+  (function () {
+    var queue = document.getElementById('queue');
+    if (!queue) return;
+    var rows = function () { return Array.from(queue.querySelectorAll('.qrow')); };
+    var i = 0;
+
+    function select(n) {
+      var all = rows();
+      if (!all.length) return;
+      i = Math.max(0, Math.min(n, all.length - 1));
+      all.forEach(function (r, k) { r.classList.toggle('sel', k === i); });
+      all[i].scrollIntoView({block: 'nearest'});
+    }
+
+    function act(row, what) {
+      if (!row) return;
+      row.classList.add('busy');
+      fetch('/api/ratings/' + what, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title_id: +row.dataset.id})
+      }).then(function (r) { return r.json(); })
+        .then(function (out) {
+          if (out.error) { row.classList.remove('busy'); row.classList.add('failed'); return; }
+          row.classList.add('done', what === 'confirm' ? 'ok' : 'dropped');
+          setTimeout(function () { row.remove(); select(i); }, 220);
+        })
+        .catch(function () { row.classList.remove('busy'); row.classList.add('failed'); });
+    }
+
+    queue.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-act]');
+      var row = e.target.closest('.qrow');
+      if (row) select(rows().indexOf(row));
+      if (btn) { e.preventDefault(); act(row, btn.dataset.act); }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.target.matches('input, textarea')) return;
+      var all = rows();
+      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); select(i + 1); }
+      else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); select(i - 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); act(all[i], 'confirm'); }
+      else if (e.key === 'Backspace') { e.preventDefault(); act(all[i], 'reject'); }
+    });
+
+    select(0);
+
+    var fill = document.getElementById('backfill');
+    if (fill) fill.addEventListener('click', function () {
+      var out = document.getElementById('backfill-out');
+      fill.disabled = true;
+      out.textContent = 'chiedo a TMDB…';
+      fetch('/api/ratings/backfill-directors', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: '{{ status }}', limit: 400})
+      }).then(function (r) { return r.json(); })
+        .then(function (o) {
+          out.textContent = o.error || (o.filled + ' registi su ' + o.seen + ' — ricarico');
+          if (!o.error) setTimeout(function () { location.reload(); }, 900);
+          else fill.disabled = false;
+        });
+    });
+  })();
+</script>
+{% endblock %}

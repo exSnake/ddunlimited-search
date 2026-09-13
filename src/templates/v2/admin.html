@@ -1,347 +1,122 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amministrazione - DDUnlimited Search</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <style>
-        .admin-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .admin-section {
-            background: #16213e;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        .admin-section h2 {
-            margin-top: 0;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
-            color: #fff;
-        }
-        .admin-section p {
-            color: #eee;
-        }
-        .admin-section code {
-            background: #1a1a2e;
-            color: #3498db;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #eee;
-        }
-        .form-group input[type="text"],
-        .form-group input[type="number"],
-        .form-group textarea {
-            width: 100%;
-            padding: 8px;
-            border: 2px solid #333;
-            border-radius: 4px;
-            background-color: #1a1a2e;
-            color: #fff;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-        }
-        .schedule-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-        }
-        .session-state {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-            color: #eee;
-        }
-        .dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            flex-shrink: 0;
-            background: #777;
-        }
-        .dot.ok { background: #4CAF50; }
-        .dot.expiring { background: #ff9800; }
-        .dot.expired,
-        .dot.missing { background: #f44336; }
-        .session-detail {
-            color: #9aa5b1;
-            font-size: 13px;
-        }
-        .toggle {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #eee;
-            margin-bottom: 15px;
-        }
-        .form-group input[type="text"]:focus,
-        .form-group input[type="number"]:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #0f4c75;
-        }
-        .form-group textarea {
-            min-height: 300px;
-            resize: vertical;
-        }
-        .form-group small {
-            display: block;
-            margin-top: 5px;
-            color: #888;
-            font-size: 12px;
-        }
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s;
-        }
-        .btn-primary {
-            background: #4CAF50;
-            color: white;
-        }
-        .btn-primary:hover {
-            background: #45a049;
-        }
-        .btn-secondary {
-            background: #0f4c75;
-            color: white;
-        }
-        .btn-secondary:hover {
-            background: #1a6da3;
-        }
-        .btn-danger {
-            background: #f44336;
-            color: white;
-        }
-        .btn-danger:hover {
-            background: #da190b;
-        }
-        .btn:disabled {
-            background: #555;
-            color: #888;
-            cursor: not-allowed;
-        }
-        .status-message {
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            display: none;
-        }
-        .status-message.success {
-            background: #1e3a2e;
-            color: #4CAF50;
-            border: 1px solid #4CAF50;
-        }
-        .status-message.error {
-            background: #3a1e1e;
-            color: #f44336;
-            border: 1px solid #f44336;
-        }
-        .status-message.info {
-            background: #1e2a3a;
-            color: #3498db;
-            border: 1px solid #3498db;
-        }
-        .import-status {
-            background: #3a2e1e;
-            border: 1px solid #ffc107;
-            color: #ffc107;
-            padding: 15px;
-            border-radius: 4px;
-            margin-top: 15px;
-            display: none;
-        }
-        .import-status.running {
-            display: block;
-            background: #1e2a3a;
-            border-color: #3498db;
-            color: #3498db;
-        }
-        .import-status.completed {
-            display: block;
-            background: #1e3a2e;
-            border-color: #4CAF50;
-            color: #4CAF50;
-        }
-        .import-status.error {
-            display: block;
-            background: #3a1e1e;
-            border-color: #f44336;
-            color: #f44336;
-        }
-        .import-status.info {
-            display: block;
-            background: #1e2a3a;
-            border-color: #3498db;
-            color: #3498db;
-        }
-        .spinner {
-            border: 3px solid #333;
-            border-top: 3px solid #4CAF50;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-            margin-right: 10px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>DDUnlimited Search - Amministrazione</h1>
-            <nav style="margin-top: 10px;">
-                <a href="/" style="margin-right: 15px;">Ricerca</a>
-                <a href="/sections" style="margin-right: 15px;">Sezioni</a>
-                <a href="/ratings" style="margin-right: 15px;">Voti</a>
-                <a href="/admin" style="margin-right: 15px;">Amministrazione</a>
-                <a href="/logs">Logs</a>
-            </nav>
-        </header>
+{% extends "v2/base.html" %}
+{% set active = 'admin' %}
+{% block title %}Amministrazione · DDUnlimited{% endblock %}
 
-        <main>
-            <div class="admin-container">
-                <!-- Browser Session Section -->
-                <div class="admin-section">
-                    <h2>Sessione browser</h2>
-                    <p>Lo scraper usa i cookie di una sessione gia' autenticata, inviati
-                       dall'estensione del browser.</p>
+{% block work %}
+<div class="page-head">
+  <h1>Amministrazione</h1>
+  <p>Sessione del forum, pianificazione degli import, elenco delle pagine da
+     leggere e import a mano. Gli sketch non hanno disegnato questa pagina:
+     i controlli sono quelli di prima, dentro il guscio nuovo.</p>
+</div>
 
-                    <div class="session-state">
-                        <span class="dot" id="session-dot"></span>
-                        <span id="session-summary">Caricamento...</span>
-                    </div>
-                    <div class="session-detail" id="session-detail"></div>
+<div class="admin-grid">
+        <!-- Browser Session Section -->
+        <div class="admin-section">
+            <h2>Sessione browser</h2>
+            <p>Lo scraper usa i cookie di una sessione gia' autenticata, inviati
+               dall'estensione del browser.</p>
 
-                    <div class="button-group" style="margin-top: 15px;">
-                        <button class="btn btn-secondary" onclick="loadSession()">Ricarica</button>
-                        <button class="btn btn-secondary" onclick="clearSession()" id="btn-clear-session">
-                            Dimentica sessione
-                        </button>
-                    </div>
+            <div class="session-state">
+                <span class="dot" id="session-dot"></span>
+                <span id="session-summary">Caricamento...</span>
+            </div>
+            <div class="session-detail" id="session-detail"></div>
 
-                    <div id="session-status" class="status-message"></div>
+            <div class="button-group" style="margin-top: 15px;">
+                <button class="btn btn-secondary" onclick="loadSession()">Ricarica</button>
+                <button class="btn btn-secondary" onclick="clearSession()" id="btn-clear-session">
+                    Dimentica sessione
+                </button>
+            </div>
+
+            <div id="session-status" class="status-message"></div>
+        </div>
+
+        <!-- Schedule Section -->
+        <div class="admin-section">
+            <h2>Pianificazione import</h2>
+            <p>Ogni quanto lo scheduler rifa' l'importazione e a che ora. Le modifiche
+               hanno effetto entro un minuto, senza riavviare il container.</p>
+
+            <label class="toggle">
+                <input type="checkbox" id="schedule-enabled">
+                <span>Import automatico attivo</span>
+            </label>
+
+            <div class="schedule-grid">
+                <div class="form-group">
+                    <label for="schedule-interval">Ogni quanti giorni:</label>
+                    <input type="number" id="schedule-interval" min="1" max="365">
                 </div>
-
-                <!-- Schedule Section -->
-                <div class="admin-section">
-                    <h2>Pianificazione import</h2>
-                    <p>Ogni quanto lo scheduler rifa' l'importazione e a che ora. Le modifiche
-                       hanno effetto entro un minuto, senza riavviare il container.</p>
-
-                    <label class="toggle">
-                        <input type="checkbox" id="schedule-enabled">
-                        <span>Import automatico attivo</span>
-                    </label>
-
-                    <div class="schedule-grid">
-                        <div class="form-group">
-                            <label for="schedule-interval">Ogni quanti giorni:</label>
-                            <input type="number" id="schedule-interval" min="1" max="365">
-                        </div>
-                        <div class="form-group">
-                            <label for="schedule-hour">Ora (0-23):</label>
-                            <input type="number" id="schedule-hour" min="0" max="23">
-                        </div>
-                        <div class="form-group">
-                            <label for="schedule-minute">Minuto (0-59):</label>
-                            <input type="number" id="schedule-minute" min="0" max="59">
-                        </div>
-                    </div>
-
-                    <div class="session-detail" id="schedule-detail"></div>
-
-                    <div class="button-group" style="margin-top: 15px;">
-                        <button class="btn btn-primary" onclick="saveSchedule()">Salva pianificazione</button>
-                        <button class="btn btn-secondary" onclick="loadSchedule()">Ricarica</button>
-                    </div>
-
-                    <div id="schedule-status" class="status-message"></div>
+                <div class="form-group">
+                    <label for="schedule-hour">Ora (0-23):</label>
+                    <input type="number" id="schedule-hour" min="0" max="23">
                 </div>
-
-                <!-- Pages.txt Editor Section -->
-                <div class="admin-section">
-                    <h2>Gestione pages.txt</h2>
-                    <p>Modifica il file pages.txt che contiene l'elenco delle pagine da importare.</p>
-                    <p><strong>Formato:</strong> <code>Sezione | URL | Numero Pagina</code></p>
-                    
-                    <div class="form-group">
-                        <label for="pages-content">Contenuto pages.txt:</label>
-                        <textarea id="pages-content" placeholder="Sezione | URL | Pagina"></textarea>
-                        <small>Una riga per pagina. Le righe che iniziano con # sono commenti.</small>
-                    </div>
-
-                    <div class="button-group">
-                        <button class="btn btn-primary" onclick="savePages()">Salva pages.txt</button>
-                        <button class="btn btn-secondary" onclick="loadPages()">Ricarica</button>
-                    </div>
-
-                    <div id="pages-status" class="status-message"></div>
-                </div>
-
-                <!-- Manual Import Section -->
-                <div class="admin-section">
-                    <h2>Importazione Manuale</h2>
-                    <p>Avvia manualmente l'importazione di una singola pagina o di tutte le pagine in pages.txt.</p>
-
-                    <div class="form-group">
-                        <label for="import-url">URL della pagina:</label>
-                        <input type="text" id="import-url" placeholder="https://ddunlimited.net/viewtopic.php?f=123&t=456">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="import-section">Nome sezione:</label>
-                        <input type="text" id="import-section" placeholder="Movie">
-                    </div>
-
-                    <div class="button-group">
-                        <button class="btn btn-primary" onclick="importSingle()" id="btn-import-single">
-                            Importa Singola Pagina
-                        </button>
-                        <button class="btn btn-secondary" onclick="importAll()" id="btn-import-all">
-                            Importa Tutte le Pagine
-                        </button>
-                    </div>
-
-                    <div id="import-status" class="import-status"></div>
+                <div class="form-group">
+                    <label for="schedule-minute">Minuto (0-59):</label>
+                    <input type="number" id="schedule-minute" min="0" max="59">
                 </div>
             </div>
-        </main>
 
-        <footer>
-            <p>DDUnlimited Search - Solo per uso personale</p>
-        </footer>
-    </div>
+            <div class="session-detail" id="schedule-detail"></div>
 
-    <script>
+            <div class="button-group" style="margin-top: 15px;">
+                <button class="btn btn-primary" onclick="saveSchedule()">Salva pianificazione</button>
+                <button class="btn btn-secondary" onclick="loadSchedule()">Ricarica</button>
+            </div>
+
+            <div id="schedule-status" class="status-message"></div>
+        </div>
+
+        <!-- Pages.txt Editor Section -->
+        <div class="admin-section">
+            <h2>Gestione pages.txt</h2>
+            <p>Modifica il file pages.txt che contiene l'elenco delle pagine da importare.</p>
+            <p><strong>Formato:</strong> <code>Sezione | URL | Numero Pagina</code></p>
+            
+            <div class="form-group">
+                <label for="pages-content">Contenuto pages.txt:</label>
+                <textarea id="pages-content" placeholder="Sezione | URL | Pagina"></textarea>
+                <small>Una riga per pagina. Le righe che iniziano con # sono commenti.</small>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="savePages()">Salva pages.txt</button>
+                <button class="btn btn-secondary" onclick="loadPages()">Ricarica</button>
+            </div>
+
+            <div id="pages-status" class="status-message"></div>
+        </div>
+
+        <!-- Manual Import Section -->
+        <div class="admin-section">
+            <h2>Importazione Manuale</h2>
+            <p>Avvia manualmente l'importazione di una singola pagina o di tutte le pagine in pages.txt.</p>
+
+            <div class="form-group">
+                <label for="import-url">URL della pagina:</label>
+                <input type="text" id="import-url" placeholder="https://ddunlimited.net/viewtopic.php?f=123&t=456">
+            </div>
+
+            <div class="form-group">
+                <label for="import-section">Nome sezione:</label>
+                <input type="text" id="import-section" placeholder="Movie">
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="importSingle()" id="btn-import-single">
+                    Importa Singola Pagina
+                </button>
+                <button class="btn btn-secondary" onclick="importAll()" id="btn-import-all">
+                    Importa Tutte le Pagine
+                </button>
+            </div>
+
+            <div id="import-status" class="import-status"></div>
+        </div>
+</div>
+<script>
         // Load pages.txt on page load
         window.addEventListener('DOMContentLoaded', function() {
             loadPages();
@@ -676,6 +451,5 @@
                 }, 15000);
             }
         }
-    </script>
-</body>
-</html>
+</script>
+{% endblock %}
