@@ -389,8 +389,9 @@ def admin_page():
 @app.route('/sections')
 def sections_page():
     """Render the sections page."""
-    sections = database.get_all_sections()
-    return render_template('sections.html', sections=sections)
+    return render_template('v2/sections.html',
+                           sections=database.get_section_counts(),
+                           **v2_shell())
 
 
 @app.route('/sections/<section>')

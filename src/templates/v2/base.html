@@ -22,7 +22,7 @@
       <a class="nav-item {% if active == 'search' %}active{% endif %}" href="{{ url_for('v2_search') }}">
         <span class="ico">⌕</span> Ricerca
       </a>
-      <a class="nav-item" href="/sections">
+      <a class="nav-item {% if active == 'sections' %}active{% endif %}" href="{{ url_for('sections_page') }}">
         <span class="ico">▦</span> Sezioni <span class="count">{{ nav_counts.sections }}</span>
       </a>
       <span class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="count">—</span></span>
