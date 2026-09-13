@@ -120,6 +120,18 @@ def extract_director_and_year(title: str) -> Tuple[Optional[str], Optional[int],
         except ValueError:
             pass
     
+    # Last resort: a year inside brackets with names in front of it. The forum
+    # writes those names every way there is — "(Renaud, Cheney 2016)",
+    # "(Salva,2001-03)", "(Moore\Posamentier2014)" — and enumerating the
+    # separators keeps missing one, so take whatever precedes the year.
+    for inner in re.findall(r'\(([^)]*)\)', title):
+        match = re.search(r'(?:19|20)\d{2}', inner)
+        if not match:
+            continue
+        head = inner[:match.start()].strip(" ,;:-\\/·.")
+        if head and not head.isdigit():
+            return head, int(match.group(0)), first_letter
+
     return None, None, first_letter
 
 
