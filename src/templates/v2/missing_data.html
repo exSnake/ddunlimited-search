@@ -1,0 +1,72 @@
+{% extends "v2/base.html" %}
+{% set active = 'missing' %}
+{% block title %}Dati mancanti · DDUnlimited{% endblock %}
+
+{% block work %}
+<div class="page-head">
+  <h1>Dati mancanti</h1>
+  <p>Titoli da cui non si è riusciti a leggere regista o anno. Sono i due campi
+     su cui si regge l'abbinamento a TMDB: senza, il punteggio non ha appigli
+     e il titolo finisce fra i non agganciati.</p>
+</div>
+
+<div class="tiles">
+  {% for tile in tiles if tile.count %}
+    <div class="tile">
+      <div class="n">{{ "{:,}".format(tile.count).replace(",", ".") }}</div>
+      <div class="tile-label">{{ tile.label }}</div>
+      <div class="tile-sub">{{ tile.sub }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<form class="filter-row" method="get" action="{{ url_for('missing_data_page') }}">
+  <span class="control-label">Sezione</span>
+  <a class="control {% if not section %}on{% endif %}" href="{{ url_for('missing_data_page') }}">tutte</a>
+  {% for s in sections %}
+    <a class="control {% if s == section %}on{% endif %}"
+       href="{{ url_for('missing_data_page', section=s) }}">{{ s }}</a>
+  {% endfor %}
+</form>
+
+<div class="resultbar">
+  <span class="count-label">
+    <b>{{ "{:,}".format(total).replace(",", ".") }}</b> titoli incompleti
+  </span>
+</div>
+
+<div class="queue">
+  {% for row in rows %}
+    <div class="qrow plain">
+      <div class="qside wide">
+        <div class="qtext">
+          <div class="qtitle">{{ row.title }}</div>
+          <div class="qsub">{{ row.section }}{% if row.quality %} · {{ row.quality }}{% endif %}</div>
+        </div>
+      </div>
+      <div class="qmissing">
+        {% if not row.director %}<span class="badge badge-missing">manca il regista</span>{% endif %}
+        {% if not row.year %}<span class="badge badge-missing">manca l'anno</span>{% endif %}
+      </div>
+      <div class="qacts">
+        <a class="btn" href="{{ row.url }}" target="_blank" rel="noopener" title="Apri il post">↗</a>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% if not rows %}
+  <div class="empty">
+    <h2>Nessun titolo incompleto</h2>
+    <p>{% if section %}In questa sezione va tutto bene.{% else %}Regista e anno ci sono ovunque.{% endif %}</p>
+  </div>
+{% endif %}
+
+{% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a href="{{ url_for('missing_data_page', section=section, page=page - 1) }}">← Precedente</a>{% endif %}
+    <span>{{ "{:,}".format(page).replace(",", ".") }} di {{ "{:,}".format(pages).replace(",", ".") }}</span>
+    {% if page < pages %}<a href="{{ url_for('missing_data_page', section=section, page=page + 1) }}">Successiva →</a>{% endif %}
+  </div>
+{% endif %}
+{% endblock %}

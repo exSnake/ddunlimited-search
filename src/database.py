@@ -771,6 +771,26 @@ def _new_group(key: str, post: dict) -> dict:
     }
 
 
+def get_missing_data_counts() -> dict:
+    """How the incomplete titles split: missing both fields, or just one."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                SUM(director IS NULL AND year IS NULL),
+                SUM(director IS NULL AND year IS NOT NULL),
+                SUM(director IS NOT NULL AND year IS NULL)
+            FROM titles
+            WHERE deleted_at IS NULL AND (director IS NULL OR year IS NULL)
+            """
+        )
+        both, director_only, year_only = cursor.fetchone()
+        return {'both': both or 0,
+                'director_only': director_only or 0,
+                'year_only': year_only or 0}
+
+
 def get_section_counts() -> list[dict]:
     """The real forum sections with how many live titles each holds."""
     with get_db() as conn:
@@ -1262,6 +1282,60 @@ def save_rating(title_id: int, match_status: str, **fields) -> None:
             """,
             [title_id] + values + [match_status, datetime.now()]
         )
+
+
+def confirm_rating(title_id: int) -> bool:
+    """Accept a match that was only proposed, keeping every stored field."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE title_ratings SET match_status = 'manual', matched_at = ?
+            WHERE title_id = ? AND tmdb_id IS NOT NULL
+            """,
+            (datetime.now(), title_id)
+        )
+        return cursor.rowcount > 0
+
+
+def get_ratings_missing_director(status: str, limit: int) -> list[dict]:
+    """Matches made before matched_director existed, so it can be filled in."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT title_id, media_type, tmdb_id FROM title_ratings
+            WHERE tmdb_id IS NOT NULL AND match_status = ?
+              AND (matched_director IS NULL OR matched_director = '')
+            LIMIT ?
+            """,
+            (status, limit)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def set_matched_director(title_id: int, director: Optional[str]) -> None:
+    """Write only the director, leaving the rest of the match alone."""
+    with get_db() as conn:
+        conn.cursor().execute(
+            "UPDATE title_ratings SET matched_director = ? WHERE title_id = ?",
+            (director, title_id)
+        )
+
+
+def count_ratings_missing_director(status: str) -> int:
+    """How many matches of this status still have no director recorded."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM title_ratings
+            WHERE tmdb_id IS NOT NULL AND match_status = ?
+              AND (matched_director IS NULL OR matched_director = '')
+            """,
+            (status,)
+        )
+        return cursor.fetchone()[0]
 
 
 def reject_rating(title_id: int) -> None:

@@ -30,15 +30,15 @@
 
     <nav class="nav-group">
       <div class="nav-label">Manutenzione</div>
-      <a class="nav-item" href="/ratings">
+      <a class="nav-item {% if active == 'ratings' %}active{% endif %}" href="{{ url_for('ratings_page') }}">
         <span class="ico">◎</span> Abbinamenti
         {% if nav_counts.review %}<span class="count warn">{{ "{:,}".format(nav_counts.review).replace(",", ".") }}</span>{% endif %}
       </a>
-      <a class="nav-item" href="/sections/missing-data">
+      <a class="nav-item {% if active == 'missing' %}active{% endif %}" href="{{ url_for('missing_data_page') }}">
         <span class="ico">⚠</span> Dati mancanti
         <span class="count">{{ "{:,}".format(nav_counts.missing).replace(",", ".") }}</span>
       </a>
-      <a class="nav-item" href="/admin"><span class="ico">⚙</span> Amministrazione</a>
+      <a class="nav-item {% if active == 'admin' %}active{% endif %}" href="{{ url_for('admin_page') }}"><span class="ico">⚙</span> Amministrazione</a>
     </nav>
 
     <div class="sidebar-foot">

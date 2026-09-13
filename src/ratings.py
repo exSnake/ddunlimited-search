@@ -301,6 +301,29 @@ def match_title(client: TMDBClient, row: dict) -> Optional[dict]:
     return build_match(best_type, details, confidence)
 
 
+def backfill_directors(status: str = 'low_confidence', limit: int = 400) -> tuple[int, int]:
+    """Fill matched_director on matches made before the column existed.
+
+    One TMDB details call per title, the same one the matcher makes, so the
+    review queue can show both directors on rows it never re-matched.
+    """
+    rows = database.get_ratings_missing_director(status, limit)
+    if not rows:
+        return 0, 0
+
+    client = TMDBClient()
+    filled = 0
+    for row in rows:
+        details = client.details(row['media_type'] or 'movie', row['tmdb_id'])
+        if not details:
+            continue
+        names = directors_of(row['media_type'] or 'movie', details)
+        if names:
+            database.set_matched_director(row['title_id'], ', '.join(names[:2]))
+            filled += 1
+    return filled, len(rows)
+
+
 def match_by_tmdb_id(media_type: str, tmdb_id: int) -> Optional[dict]:
     """Fetch one known TMDB entry, for a match corrected by hand."""
     client = TMDBClient()
