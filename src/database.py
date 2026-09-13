@@ -58,8 +58,10 @@ def extract_director_and_year(title: str) -> Tuple[Optional[str], Optional[int],
     
     # Try to extract director and year from parentheses
     # Pattern 1: (Director, YYYY) or (Director, YYYY-YYYY) - standard pattern
-    # Allow spaces before/after comma and inside parentheses
-    match = re.search(r'\(\s*([^,)]+?)\s*,\s*(\d{4})(?:-\d{4})?\s*\)', title)
+    # The director side allows commas, because a film credited to two or three
+    # people writes them that way and forbidding the comma lost the year too.
+    # The year side allows a range written with a slash as well as a dash.
+    match = re.search(r'\(\s*([^)]+?)\s*,\s*(\d{4})(?:\s*[-/]\s*\d{4})?\s*\)', title)
     if match:
         part1 = match.group(1).strip()
         year_str = match.group(2)
@@ -108,8 +110,8 @@ def extract_director_and_year(title: str) -> Tuple[Optional[str], Optional[int],
         except ValueError:
             pass
     
-    # Pattern 5: Just year: (YYYY)
-    match = re.search(r'\(\s*(\d{4})\s*\)', title)
+    # Pattern 5: Just year: (YYYY), or a range for shorts collected together
+    match = re.search(r'\(\s*(\d{4})(?:\s*[-/]\s*\d{4})?\s*\)', title)
     if match:
         year_str = match.group(1)
         try:
@@ -119,6 +121,36 @@ def extract_director_and_year(title: str) -> Tuple[Optional[str], Optional[int],
             pass
     
     return None, None, first_letter
+
+
+def _reextract_missing_director_year(cursor) -> int:
+    """Re-read director and year on titles where the parser once gave up.
+
+    Cheap enough to run at every startup: it only looks at rows still missing
+    a field, and when the patterns improve those rows pick up the gain
+    without waiting for the title to be imported again.
+    """
+    cursor.execute(
+        """
+        SELECT id, title FROM titles
+        WHERE deleted_at IS NULL AND (director IS NULL OR year IS NULL)
+        """
+    )
+    fixed = 0
+    for row in cursor.fetchall():
+        director, year, _ = extract_director_and_year(row['title'])
+        if director is None and year is None:
+            continue
+        cursor.execute(
+            """
+            UPDATE titles SET director = COALESCE(?, director),
+                              year = COALESCE(?, year)
+            WHERE id = ? AND (director IS NULL OR year IS NULL)
+            """,
+            (director, year, row['id'])
+        )
+        fixed += cursor.rowcount
+    return fixed
 
 
 def _normalize_stored_qualities(cursor) -> int:
@@ -266,6 +298,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_status ON title_ratings(match_status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_imdb_id ON title_ratings(imdb_id)")
         _normalize_stored_qualities(cursor)
+        _reextract_missing_director_year(cursor)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_rating_score
             ON title_ratings(COALESCE(imdb_rating, tmdb_rating))
