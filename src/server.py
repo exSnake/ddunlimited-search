@@ -53,9 +53,8 @@ flask_logger.propagate = False
 # Custom request handler to log to our web logger
 class CustomRequestHandler(WSGIRequestHandler):
     def log_request(self, code='-', size='-'):
-        if code != 200:  # Only log non-200 responses to console
-            super().log_request(code, size)
-        # Always log to file
+        # One line per request, ours: werkzeug's own would repeat it with the
+        # terminal colour codes still in the text, which Loki stores verbatim.
         web_logger.info(f'{self.address_string()} - - [{self.log_date_time_string()}] "{self.requestline}" {code} {size}')
 
 app = Flask(__name__)
