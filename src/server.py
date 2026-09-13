@@ -398,10 +398,11 @@ def missing_data_page():
     """Titles the parser could not read a director or a year out of."""
     section = request.args.get('section', '').strip() or None
     page = max(request.args.get('page', 1, type=int) or 1, 1)
+    include_tv = request.args.get('tv') == '1'
 
     rows, total = database.get_titles_with_missing_data(
-        page=page, per_page=50, section=section)
-    counts = database.get_missing_data_counts()
+        page=page, per_page=50, section=section, include_tv=include_tv)
+    counts = database.get_missing_data_counts(include_tv=include_tv)
 
     tiles = [
         {'count': counts['both'], 'label': 'senza regista né anno',
@@ -417,7 +418,8 @@ def missing_data_page():
         rows=rows, total=total, page=page,
         pages=max((total + 49) // 50, 1),
         section=section, sections=database.get_all_sections(),
-        tiles=tiles, **v2_shell())
+        tiles=tiles, include_tv=include_tv, tv_count=counts['tv'],
+        **v2_shell())
 
 
 @app.route('/api/pages', methods=['GET'])

@@ -157,6 +157,15 @@ body.no-glass * { backdrop-filter: none !important; }
   font-weight: 650;
   letter-spacing: -0.02em;
 }
+.page-head .page-note {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--edge);
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
+}
+.page-head .page-note a { color: var(--color-primary); }
 .page-head p {
   margin: var(--space-2) 0 0;
   max-width: 60ch;

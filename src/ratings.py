@@ -88,6 +88,26 @@ def clean_title(title: str) -> str:
     return ' '.join(cleaned.split())
 
 
+TRAILING_ARTICLE_RE = re.compile(
+    r'^(.*?),\s*(the|a|an|il|lo|la|i|gli|le|l\'|un|uno|una)\s*$',
+    re.IGNORECASE
+)
+
+
+def restore_leading_article(title: str) -> str:
+    """Put back an article the forum moved to the end.
+
+    Series are catalogued as "AGENCY, THE", which shares few characters with
+    "The Agency" and scores far below the threshold on similarity alone.
+    """
+    match = TRAILING_ARTICLE_RE.match(title.strip())
+    if not match:
+        return ''
+    article = match.group(2)
+    joiner = '' if article.endswith("'") else ' '
+    return f"{article}{joiner}{match.group(1).strip()}"
+
+
 def title_variants(title: str) -> list[str]:
     """Query strings to try, in decreasing order of fidelity to the original."""
     variants = []
@@ -102,6 +122,7 @@ def title_variants(title: str) -> list[str]:
 
     add(restore_accents(base))
     add(TRAILING_APOSTROPHE_RE.sub('', base))
+    add(restore_leading_article(base))
 
     # Last resort: titles whose subtitle sits after a dash we do not recognise.
     if ' - ' in base:
