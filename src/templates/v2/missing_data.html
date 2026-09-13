@@ -8,6 +8,20 @@
   <p>Titoli da cui non si è riusciti a leggere regista o anno. Sono i due campi
      su cui si regge l'abbinamento a TMDB: senza, il punteggio non ha appigli
      e il titolo finisce fra i non agganciati.</p>
+  {% if not include_tv %}
+    <p class="page-note">
+      Serie e anime sono esclusi: si cataloghano come «TITOLO - Stagione N» e quei
+      due campi nel titolo non li hanno mai, quindi elencarli nasconde i titoli a cui
+      invece mancano davvero. TMDB glieli fornisce all'abbinamento.
+      <a href="{{ url_for('missing_data_page', tv=1) }}">Mostrali lo stesso
+      ({{ "{:,}".format(tv_count).replace(",", ".") }})</a>.
+    </p>
+  {% else %}
+    <p class="page-note">
+      Stai vedendo anche serie e anime.
+      <a href="{{ url_for('missing_data_page') }}">Torna ai soli film</a>.
+    </p>
+  {% endif %}
 </div>
 
 <div class="tiles">

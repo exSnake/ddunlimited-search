@@ -816,7 +816,14 @@ def _new_group(key: str, post: dict) -> dict:
     }
 
 
-def get_missing_data_counts() -> dict:
+# Series and anime are catalogued as "TITLE - Stagione N": no director, no year,
+# by convention rather than by accident. TMDB supplies both once matched, so
+# listing them as incomplete buries the titles that really are.
+NOT_TV_SQL = ("NOT (section LIKE 'Serie%' "
+              "OR (section LIKE 'Anime%' AND section NOT LIKE 'Animazione%'))")
+
+
+def get_missing_data_counts(include_tv: bool = False) -> dict:
     """How the incomplete titles split: missing both fields, or just one."""
     with get_db() as conn:
         cursor = conn.cursor()
@@ -828,12 +835,21 @@ def get_missing_data_counts() -> dict:
                 SUM(director IS NOT NULL AND year IS NULL)
             FROM titles
             WHERE deleted_at IS NULL AND (director IS NULL OR year IS NULL)
-            """
+            """ + ("" if include_tv else f" AND {NOT_TV_SQL}")
         )
         both, director_only, year_only = cursor.fetchone()
+
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) FROM titles
+            WHERE deleted_at IS NULL AND (director IS NULL OR year IS NULL)
+              AND NOT ({NOT_TV_SQL})
+            """
+        )
         return {'both': both or 0,
                 'director_only': director_only or 0,
-                'year_only': year_only or 0}
+                'year_only': year_only or 0,
+                'tv': cursor.fetchone()[0]}
 
 
 def get_section_counts() -> list[dict]:
@@ -1218,24 +1234,21 @@ def get_section_stats(section: str) -> dict:
 def get_titles_with_missing_data(
     page: int = 1,
     per_page: int = 50,
-    section: Optional[str] = None
+    section: Optional[str] = None,
+    include_tv: bool = False
 ) -> tuple[list[dict], int]:
-    """
-    Get titles where director or year is NULL (for error checking).
-    
-    Args:
-        page: Page number (default: 1)
-        per_page: Results per page (default: 50)
-        section: Filter by section (optional)
-    
-    Returns:
-        Tuple of (results, total_count)
+    """Titles where director or year is NULL, for error checking.
+
+    Series and anime are left out unless asked for: they never carry either
+    field in the title, so listing them hides the ones that should.
     """
     with get_db() as conn:
         cursor = conn.cursor()
         
         # Build base query
         base_query = "FROM titles WHERE (director IS NULL OR year IS NULL)"
+        if not include_tv:
+            base_query += f" AND {NOT_TV_SQL}"
         params = []
         
         if section:
