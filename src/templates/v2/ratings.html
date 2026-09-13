@@ -26,6 +26,17 @@
   </div>
 </div>
 
+{% if article_count %}
+  <div class="queue-notice">
+    {{ "{:,}".format(article_count).replace(",", ".") }} sono stati abbinati prima che il
+    matcher sapesse rimettere a posto l'articolo spostato in fondo
+    («AGENCY, THE» → «The Agency»), quindi hanno preso un punteggio basso per come
+    sono scritti, non per un dubbio vero.
+    <button type="button" id="rematch">Riprova questi</button>
+    <span id="rematch-out"></span>
+  </div>
+{% endif %}
+
 {% if missing_directors %}
   <div class="queue-notice">
     {{ "{:,}".format(missing_directors).replace(",", ".") }} abbinamenti sono stati fatti
@@ -140,6 +151,29 @@
     });
 
     select(0);
+
+    function longJob(btnId, outId, url, body, label) {
+      var btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        var out = document.getElementById(outId);
+        btn.disabled = true;
+        out.textContent = label;
+        fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)})
+          .then(function (r) { return r.json(); })
+          .then(function (o) {
+            if (o.error) { out.textContent = o.error; btn.disabled = false; return; }
+            out.textContent = (o.filled !== undefined)
+              ? o.filled + ' su ' + o.seen + ' — ricarico'
+              : o.matched + ' risolti su ' + o.processed + ' — ricarico';
+            setTimeout(function () { location.reload(); }, 900);
+          });
+      });
+    }
+
+    longJob('rematch', 'rematch-out', '/api/ratings/rematch-article',
+            {limit: 500}, 'chiedo a TMDB…');
 
     var fill = document.getElementById('backfill');
     if (fill) fill.addEventListener('click', function () {

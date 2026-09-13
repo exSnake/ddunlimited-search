@@ -882,6 +882,8 @@ def ratings_page():
         pages=max((total + V2_REVIEW_PER_PAGE - 1) // V2_REVIEW_PER_PAGE, 1),
         tabs=[(k, label, counts.get(k, 0)) for k, label in V2_REVIEW_TABS],
         missing_directors=database.count_ratings_missing_director(status),
+        article_count=(database.count_low_confidence_with_trailing_article()
+                       if status == 'low_confidence' else 0),
         **v2_shell())
 
 
@@ -1048,6 +1050,21 @@ def api_ratings_backfill_directors():
         return jsonify({'error': str(e)}), 502
 
     return jsonify({'success': True, 'filled': filled, 'seen': seen})
+
+
+@app.route('/api/ratings/rematch-article', methods=['POST'])
+def api_ratings_rematch_article():
+    """Score again the titles that moved the article to the end."""
+    if not config.TMDB_API_KEY:
+        return jsonify({'error': 'TMDB_API_KEY non configurata'}), 400
+
+    data = request.get_json(silent=True) or {}
+    limit = min(max(int(data.get('limit', 500) or 500), 1), 3000)
+    try:
+        counts = ratings.rematch_trailing_article(limit=limit)
+    except ratings.RatingsError as e:
+        return jsonify({'error': str(e)}), 502
+    return jsonify({'success': True, **counts})
 
 
 @app.route('/api/ratings/reject', methods=['POST'])

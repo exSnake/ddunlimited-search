@@ -1356,6 +1356,47 @@ def confirm_rating(title_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+# "AGENCY, THE - Stagione 1": the article sits after the title, before the
+# season suffix. SQLite has no regex, so the forms are listed.
+TRAILING_ARTICLE_LIKE = " OR ".join(
+    f"titles.title LIKE '%, {a}' OR titles.title LIKE '%, {a} -%'"
+    for a in ('THE', 'A', 'AN', 'IL', 'LO', 'LA', 'I', 'GLI', 'LE', 'UN', 'UNO', 'UNA')
+) + " OR titles.title LIKE '%, L''%'"
+
+
+def count_low_confidence_with_trailing_article() -> int:
+    """How many uncertain matches carry the moved article."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) FROM titles
+            JOIN title_ratings r ON r.title_id = titles.id
+            WHERE titles.deleted_at IS NULL AND r.match_status = 'low_confidence'
+              AND ({TRAILING_ARTICLE_LIKE})
+            """
+        )
+        return cursor.fetchone()[0]
+
+
+def get_low_confidence_with_trailing_article(limit: int) -> list[dict]:
+    """Uncertain matches whose title moves the article to the end."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT titles.id, titles.title, titles.section, titles.director, titles.year
+            FROM titles JOIN title_ratings r ON r.title_id = titles.id
+            WHERE titles.deleted_at IS NULL AND r.match_status = 'low_confidence'
+              AND ({TRAILING_ARTICLE_LIKE})
+            ORDER BY titles.id
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_ratings_missing_director(status: str, limit: int) -> list[dict]:
     """Matches made before matched_director existed, so it can be filled in."""
     with get_db() as conn:
