@@ -134,6 +134,7 @@ body.no-glass * { backdrop-filter: none !important; }
   color: var(--color-text-muted);
 }
 .status-line.rating { color: var(--color-rating-tmdb); }
+.status-line.version { font-family: var(--font-mono); }
 .status-dot {
   width: 6px;
   height: 6px;

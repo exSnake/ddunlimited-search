@@ -73,3 +73,12 @@ RATING_BATCH_SIZE = int(os.getenv("RATING_BATCH_SIZE", "500"))
 # Ceiling for a single scheduled pass, so a long backlog does not hold up an
 # import for hours. The rest is picked up by the next pass.
 RATING_MAX_PER_RUN = int(os.getenv("RATING_MAX_PER_RUN", "5000"))
+
+# Read from the VERSION file at the repository root, which the release bumps;
+# shown in the sidebar so a deploy can be told apart from the previous one.
+_VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "VERSION")
+try:
+    with open(_VERSION_FILE, encoding="utf-8") as _f:
+        APP_VERSION = _f.read().strip() or "dev"
+except OSError:
+    APP_VERSION = "dev"
