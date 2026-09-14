@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 import config
 import database
+import plex
 import ratings
 import scraper
 
@@ -37,6 +38,9 @@ RETRY_BACKOFF = timedelta(hours=1)
 # The ratings pass has its own cadence: TMDB has a backlog to chew through
 # after an import, and the OMDb daily budget refills every night.
 RATINGS_INTERVAL = timedelta(hours=6)
+
+# The Plex library is read whole at every pass: a handful of requests.
+PLEX_INTERVAL = timedelta(hours=config.PLEX_REFRESH_HOURS)
 
 
 def parse_timestamp(value) -> datetime | None:
@@ -152,6 +156,18 @@ def run_ratings() -> None:
         logger.error(f"Error during ratings enrichment: {e}", exc_info=True)
 
 
+def run_plex() -> None:
+    """Read the Plex library again, so the search knows what is owned."""
+    if not plex.is_configured():
+        return
+
+    try:
+        result = plex.refresh()
+        logger.info(f"Plex library: {result}")
+    except Exception as e:
+        logger.error(f"Error reading the Plex library: {e}", exc_info=True)
+
+
 def main():
     """Main scheduler loop."""
     logger.info("DDUnlimited Search Scheduler starting...")
@@ -166,6 +182,7 @@ def main():
 
     last_reason = None
     next_ratings_at = datetime.now()
+    next_plex_at = datetime.now()
     while True:
         try:
             schedule = database.get_schedule()
@@ -183,6 +200,10 @@ def main():
             if datetime.now() >= next_ratings_at:
                 run_ratings()
                 next_ratings_at = datetime.now() + RATINGS_INTERVAL
+
+            if datetime.now() >= next_plex_at:
+                run_plex()
+                next_plex_at = datetime.now() + PLEX_INTERVAL
 
             time.sleep(POLL_SECONDS)
 

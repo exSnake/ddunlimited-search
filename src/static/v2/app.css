@@ -692,6 +692,10 @@ body.is-searching .control:focus { border-color: var(--color-primary); color: va
 
 /* il post senza scheda TMDB: stessa lista, forma diversa */
 .card.orphan { border-style: dashed; background: transparent; }
+/* I posseduti arretrano per togliere rumore, non per svalutare la copia. */
+.card.owned { border-left: 2px solid var(--color-owned); }
+.card.dimmed { opacity: 0.62; }
+.card.dimmed:hover { opacity: 1; }
 
 .poster {
   display: block;
@@ -756,6 +760,13 @@ body.is-searching .control:focus { border-color: var(--color-primary); color: va
   white-space: nowrap;
 }
 .badge-unmatched { border-style: dashed; }
+/* Il possesso è una constatazione: verde, con la risoluzione dentro. */
+.badge-owned {
+  border-color: rgba(61, 220, 151, 0.4);
+  background: var(--color-owned-dim);
+  color: var(--color-owned);
+}
+.badge-owned .q { font-family: var(--font-mono); font-weight: 600; }
 
 .rating {
   display: inline-flex;
@@ -798,6 +809,22 @@ body.is-searching .control:focus { border-color: var(--color-primary); color: va
 .release .q { color: var(--color-text); font-weight: 600; }
 /* Il post non dice la qualità: lo stato sconosciuto è uno stato, non un «?». */
 .release-unknown { border-style: dashed; }
+
+/* La copia che hai in Plex, e le release di altra risoluzione: il blu dice
+   «qui puoi cliccare», mai l'ambra di «qui c'è un problema». */
+.release.mine {
+  border-color: rgba(61, 220, 151, 0.4);
+  background: var(--color-owned-dim);
+  color: var(--color-owned);
+}
+.release.mine .q { color: var(--color-owned); }
+.release.mine::after { content: 'la tua'; font-size: 9px; opacity: 0.8; }
+.release.available {
+  border-color: rgba(76, 194, 255, 0.45);
+  background: var(--color-primary-dim);
+  color: var(--color-text);
+}
+.release.available .q { color: var(--color-primary); }
 
 .pager {
   display: flex;

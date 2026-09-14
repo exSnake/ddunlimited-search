@@ -74,6 +74,14 @@ RATING_BATCH_SIZE = int(os.getenv("RATING_BATCH_SIZE", "500"))
 # import for hours. The rest is picked up by the next pass.
 RATING_MAX_PER_RUN = int(os.getenv("RATING_MAX_PER_RUN", "5000"))
 
+# The Plex server that holds the library. Both empty means "not connected":
+# the search still works, the library filters stay off.
+PLEX_URL = os.getenv("PLEX_URL", "")
+PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
+PLEX_ENABLED = bool(PLEX_URL and PLEX_TOKEN)
+# How often the scheduler re-reads the library.
+PLEX_REFRESH_HOURS = float(os.getenv("PLEX_REFRESH_HOURS", "1"))
+
 # Read from the VERSION file at the repository root, which the release bumps;
 # shown in the sidebar so a deploy can be told apart from the previous one.
 _VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "VERSION")
