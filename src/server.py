@@ -158,6 +158,7 @@ def v2_shell() -> dict:
             'total': stats['total_titles'],
         },
         'grafana_logs_url': config.GRAFANA_LOGS_URL,
+        'app_version': config.APP_VERSION,
     }
 
 
