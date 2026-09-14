@@ -25,7 +25,14 @@
       <a class="nav-item {% if active == 'sections' %}active{% endif %}" href="{{ url_for('sections_page') }}">
         <span class="ico">▦</span> Sezioni <span class="count">{{ nav_counts.sections }}</span>
       </a>
-      <span class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="count">—</span></span>
+      {% if plex.enabled %}
+        <a class="nav-item {% if active == 'library' %}active{% endif %}" href="{{ url_for('v2_search', library='in') }}">
+          <span class="ico">✦</span> Libreria Plex
+          <span class="count">{{ "{:,}".format(plex.films).replace(",", ".") }}</span>
+        </a>
+      {% else %}
+        <span class="nav-item"><span class="ico">✦</span> Libreria Plex <span class="count">—</span></span>
+      {% endif %}
     </nav>
 
     <nav class="nav-group">
@@ -89,10 +96,11 @@
     function panelParams() {
       var p = params(), panel = document.querySelector('#panel-region form');
       if (!panel) return p;
-      ['section', 'quality', 'min_rating'].forEach(function (k) { p.delete(k); });
+      ['section', 'quality', 'min_rating', 'library', 'missing'].forEach(function (k) { p.delete(k); });
       new FormData(panel).forEach(function (v, k) {
         if (k === 'section' || k === 'quality') p.append(k, v);
         else if (k === 'min_rating' && +v > 0) p.set(k, v);
+        else if ((k === 'library' || k === 'missing') && v) p.set(k, v);
       });
       return p;
     }

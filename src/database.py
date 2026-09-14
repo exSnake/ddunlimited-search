@@ -329,6 +329,22 @@ def init_db():
         if 'matched_director' not in rating_columns:
             cursor.execute("ALTER TABLE title_ratings ADD COLUMN matched_director TEXT")
 
+        # The Plex library, one row per film with a TMDB id, replaced wholesale
+        # at every refresh. Keyed by tmdb_id so the search can join on it.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS plex_items (
+                tmdb_id INTEGER PRIMARY KEY,
+                rating_key INTEGER,
+                film_title TEXT,
+                film_year INTEGER,
+                imdb_id TEXT,
+                owned_resolution TEXT,
+                owned_quality TEXT,
+                library_section TEXT,
+                synced_at TIMESTAMP
+            )
+        """)
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_status ON title_ratings(match_status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_imdb_id ON title_ratings(imdb_id)")
         _normalize_stored_qualities(cursor)
@@ -481,12 +497,18 @@ def _build_search_filter(
     sections: Optional[list] = None,
     qualities: Optional[list] = None,
     allow_empty: bool = False,
+    library: Optional[str] = None,
+    missing_only: bool = False,
 ) -> tuple[str, list]:
     """Build the shared FROM/WHERE clause for the search queries.
 
     Returns (base_query, params). Without title criteria the result matches
     nothing, unless allow_empty is set — the home page browses the catalogue
     with no query at all.
+
+    library is 'in' or 'out' to keep only films that are, or are not, in the
+    Plex library; missing_only keeps the releases whose resolution differs
+    from the copy owned, and every release of films not owned at all.
     """
     title_conditions = []
     params = []
@@ -516,16 +538,16 @@ def _build_search_filter(
 
     deleted_filter = "" if include_deleted else "deleted_at IS NULL AND "
     if title_conditions:
-        base_query = (f"FROM titles {RATING_JOIN} WHERE "
+        base_query = (f"FROM titles {RATING_JOIN} {PLEX_JOIN} WHERE "
                       + deleted_filter + " AND ".join(title_conditions))
     elif allow_empty:
-        base_query = (f"FROM titles {RATING_JOIN} WHERE "
+        base_query = (f"FROM titles {RATING_JOIN} {PLEX_JOIN} WHERE "
                       + (deleted_filter or "") + "1=1")
         params = []
     else:
-        # No criteria: match nothing, but keep the join so the callers' rating
+        # No criteria: match nothing, but keep the joins so the callers'
         # columns still resolve.
-        return f"FROM titles {RATING_JOIN} WHERE 1=0", []
+        return f"FROM titles {RATING_JOIN} {PLEX_JOIN} WHERE 1=0", []
 
     if section:
         base_query += " AND section = ?"
@@ -545,6 +567,15 @@ def _build_search_filter(
     if min_rating is not None:
         base_query += f" AND {RATING_SCORE_SQL} >= ?"
         params.append(min_rating)
+
+    if library == 'in':
+        base_query += " AND p.tmdb_id IS NOT NULL"
+    elif library == 'out':
+        base_query += " AND p.tmdb_id IS NULL"
+
+    if missing_only:
+        base_query += (f" AND (p.tmdb_id IS NULL OR ({RESOLUTION_SQL} IS NOT NULL"
+                       f" AND {RESOLUTION_SQL} != p.owned_quality))")
 
     return base_query, params
 
@@ -655,6 +686,8 @@ def search_titles_grouped(
     sections: Optional[list] = None,
     qualities: Optional[list] = None,
     allow_empty: bool = False,
+    library: Optional[str] = None,
+    missing_only: bool = False,
 ) -> tuple[list[dict], int]:
     """Search titles grouped by film rather than by post.
 
@@ -669,7 +702,7 @@ def search_titles_grouped(
     """
     base_query, params = _build_search_filter(
         query, section, search_type, director, include_deleted, min_rating,
-        sections, qualities, allow_empty
+        sections, qualities, allow_empty, library, missing_only
     )
 
     if "1=0" in base_query:
@@ -711,7 +744,8 @@ def search_titles_grouped(
             f"""
             SELECT titles.id, title, url, section, metadata, quality, languages,
                    director, year, title_first_letter, created_at, deleted_at,
-                   {GROUP_KEY_SQL} AS group_key, {RATING_COLUMNS}
+                   {GROUP_KEY_SQL} AS group_key, {RATING_COLUMNS}, {PLEX_COLUMNS},
+                   {RESOLUTION_SQL} AS resolution_class
             {base_query} AND {GROUP_KEY_SQL} IN ({placeholders})
             ORDER BY title
             """,
@@ -733,6 +767,10 @@ def search_titles_grouped(
 
 _FACET_CACHE: dict = {}
 _FACET_TTL = 300
+
+
+def clear_facet_cache() -> None:
+    _FACET_CACHE.clear()
 
 
 def get_browse_facets() -> dict:
@@ -759,6 +797,8 @@ def get_search_facets(
     sections: Optional[list] = None,
     qualities: Optional[list] = None,
     allow_empty: bool = False,
+    library: Optional[str] = None,
+    missing_only: bool = False,
 ) -> dict:
     """Count films per section and per quality for the current search.
 
@@ -767,11 +807,11 @@ def get_search_facets(
     collapsing to the current selection.
     """
     def count_by(expr: str, **overrides) -> dict:
-        kw = dict(sections=sections, qualities=qualities)
+        kw = dict(sections=sections, qualities=qualities, library=library)
         kw.update(overrides)
         base_query, params = _build_search_filter(
             query, section, search_type, director, include_deleted, min_rating,
-            kw['sections'], kw['qualities'], allow_empty
+            kw['sections'], kw['qualities'], allow_empty, kw['library'], missing_only
         )
         if "1=0" in base_query:
             return {}
@@ -786,6 +826,8 @@ def get_search_facets(
 
     section_counts = count_by(SECTION_SQL, sections=None)
     quality_counts = count_by(QUALITY_SQL, qualities=None)
+    library_counts = count_by(
+        "CASE WHEN p.tmdb_id IS NULL THEN 'out' ELSE 'in' END", library=None)
 
     known = [s for s in SECTION_ORDER if s in section_counts]
     extra = sorted(k for k in section_counts if k not in SECTION_ORDER)
@@ -805,7 +847,7 @@ def get_search_facets(
 
     base_query, params = _build_search_filter(
         query, section, search_type, director, include_deleted, min_rating,
-        sections, qualities, allow_empty
+        sections, qualities, allow_empty, library, missing_only
     )
     total_posts = 0
     if "1=0" not in base_query:
@@ -815,6 +857,8 @@ def get_search_facets(
             total_posts = cursor.fetchone()[0]
 
     return {'sections': section_facets, 'qualities': quality_facets,
+            'library': {'in': library_counts.get('in', 0),
+                        'out': library_counts.get('out', 0)},
             'total_posts': total_posts}
 
 
@@ -835,6 +879,7 @@ def _new_group(key: str, post: dict) -> dict:
         "matched_year": post.get("matched_year"),
         "confidence": post.get("confidence"),
         "match_status": post.get("match_status"),
+        "owned_quality": post.get("owned_quality"),
         "posts": [],
     }
 
@@ -1190,6 +1235,59 @@ RATING_COLUMNS = """
     r.imdb_rating, r.imdb_votes, r.poster_path, r.matched_title,
     r.matched_year, r.matched_director, r.confidence, r.match_status
 """
+
+PLEX_JOIN = "LEFT JOIN plex_items p ON p.tmdb_id = r.tmdb_id"
+
+PLEX_COLUMNS = "p.owned_quality, p.owned_resolution"
+
+# A post's quality names the source as often as the size (BluRay, WEB, HDTV):
+# only the resolution steps compare with what Plex reports about a file.
+RESOLUTION_SQL = (
+    f"CASE {QUALITY_SQL} WHEN '4K' THEN '4K' WHEN '1080p' THEN '1080p' "
+    "WHEN '720p' THEN '720p' WHEN 'SD' THEN 'SD' WHEN 'DVD' THEN 'SD' END"
+)
+
+
+def replace_plex_items(films: list[dict]) -> int:
+    """Store the library as read now; returns how many rows carry a TMDB id.
+
+    Two copies of the same film keep the higher resolution.
+    """
+    import plex
+
+    ranked = sorted(
+        (f for f in films if f.get('tmdb_id')),
+        key=lambda f: plex.RESOLUTION_RANK.get(f.get('quality'), -1), reverse=True)
+    now = datetime.now().isoformat(timespec='seconds')
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM plex_items")
+        cursor.executemany(
+            """
+            INSERT OR IGNORE INTO plex_items
+                (tmdb_id, rating_key, film_title, film_year, imdb_id,
+                 owned_resolution, owned_quality, library_section, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [(f['tmdb_id'], f['rating_key'], f['title'], f['year'], f['imdb_id'],
+              f['resolution'], f['quality'], f['section'], now) for f in ranked]
+        )
+        cursor.execute("SELECT COUNT(*) FROM plex_items")
+        return cursor.fetchone()[0]
+
+
+def get_plex_status() -> dict:
+    """How much of the library the database holds, and since when."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS films, MAX(synced_at) AS synced_at FROM plex_items")
+        row = cursor.fetchone()
+        cursor.execute(
+            "SELECT COUNT(DISTINCT p.tmdb_id) FROM plex_items p "
+            "JOIN title_ratings r ON r.tmdb_id = p.tmdb_id"
+        )
+        return {'films': row['films'], 'synced_at': row['synced_at'],
+                'in_catalogue': cursor.fetchone()[0]}
 
 
 def get_titles_to_match(limit: int = 500, retry_unmatched: bool = False,

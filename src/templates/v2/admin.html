@@ -89,6 +89,24 @@
             <div id="pages-status" class="status-message"></div>
         </div>
 
+        <div class="admin-section">
+            <h2>Libreria Plex</h2>
+            <p>Ogni film in Plex porta l'id TMDB e la risoluzione della copia: la
+               libreria si legge in blocco, ogni ora dallo scheduler o da qui.</p>
+
+            <div class="session-state">
+                <span class="dot" id="plex-dot"></span>
+                <span id="plex-summary">Caricamento...</span>
+            </div>
+            <div class="session-detail" id="plex-detail"></div>
+
+            <div class="button-group" style="margin-top: 15px;">
+                <button class="btn btn-primary" onclick="refreshPlex()" id="btn-plex-refresh">Rileggi la libreria</button>
+            </div>
+
+            <div id="plex-status" class="status-message"></div>
+        </div>
+
         <!-- Manual Import Section -->
         <div class="admin-section">
             <h2>Importazione Manuale</h2>
@@ -122,6 +140,7 @@
             loadPages();
             loadSession();
             loadSchedule();
+            loadPlex();
             checkImportStatus();
             // Check import status every 1 second for more responsive updates
             setInterval(checkImportStatus, 1000);
@@ -168,6 +187,54 @@
                 })
                 .catch(error => {
                     showStatus('session-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function loadPlex() {
+            fetch('/api/plex/status')
+                .then(response => response.json())
+                .then(data => {
+                    const dot = document.getElementById('plex-dot');
+                    const summary = document.getElementById('plex-summary');
+                    const detail = document.getElementById('plex-detail');
+                    document.getElementById('btn-plex-refresh').disabled = !data.enabled;
+                    if (!data.enabled) {
+                        dot.className = 'dot missing';
+                        summary.textContent = 'Plex non collegato';
+                        detail.textContent = 'Servono PLEX_URL e PLEX_TOKEN nell\'ambiente dei container.';
+                        return;
+                    }
+                    if (!data.films) {
+                        dot.className = 'dot expiring';
+                        summary.textContent = 'Libreria non ancora letta';
+                        detail.textContent = data.url;
+                        return;
+                    }
+                    dot.className = 'dot ok';
+                    summary.textContent = `${data.films.toLocaleString('it-IT')} film con id TMDB`;
+                    detail.textContent = `${data.in_catalogue.toLocaleString('it-IT')} anche sul forum · letta il ${formatDate(data.synced_at)} · ${data.url}`;
+                })
+                .catch(error => {
+                    showStatus('plex-status', 'error', `Errore di connessione: ${error.message}`);
+                });
+        }
+
+        function refreshPlex() {
+            const btn = document.getElementById('btn-plex-refresh');
+            btn.disabled = true;
+            showStatus('plex-status', 'info', 'Lettura in corso...');
+            fetch('/api/plex/refresh', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    btn.disabled = false;
+                    if (data.error) { showStatus('plex-status', 'error', data.error); return; }
+                    showStatus('plex-status', 'success',
+                        `Letti ${data.films} film, ${data.with_tmdb} con id TMDB.`);
+                    loadPlex();
+                })
+                .catch(error => {
+                    btn.disabled = false;
+                    showStatus('plex-status', 'error', `Errore di connessione: ${error.message}`);
                 });
         }
 

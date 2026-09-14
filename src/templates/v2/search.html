@@ -12,6 +12,8 @@
   {% if skip != 'section' %}{% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}{% endif %}
   {% if skip != 'quality' %}{% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}{% endif %}
   {% if skip != 'min_rating' and min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
+  {% if skip != 'library' and library %}<input type="hidden" name="library" value="{{ library }}">{% endif %}
+  {% if skip != 'missing' and missing %}<input type="hidden" name="missing" value="1">{% endif %}
 {% endmacro %}
 
 {% block work %}
@@ -28,6 +30,8 @@
       {% for s in sections %}<input type="hidden" name="section" value="{{ s }}">{% endfor %}
       {% for s in qualities %}<input type="hidden" name="quality" value="{{ s }}">{% endfor %}
       {% if min_rating %}<input type="hidden" name="min_rating" value="{{ min_rating }}">{% endif %}
+      {% if library %}<input type="hidden" name="library" value="{{ library }}">{% endif %}
+      {% if missing %}<input type="hidden" name="missing" value="1">{% endif %}
       <span class="kbd" data-kbd>⌘K</span>
       <noscript><button type="submit">Cerca</button></noscript>
     </form>
@@ -71,7 +75,7 @@
 
       <div class="results">
         {% for group in groups %}
-          <article class="card {% if not group.tmdb_id %}orphan{% endif %}">
+          <article class="card {% if not group.tmdb_id %}orphan{% endif %} {% if group.owned_quality %}owned dimmed{% endif %}">
             {% if group.poster_path %}
               <img class="poster" loading="lazy" alt=""
                    src="https://image.tmdb.org/t/p/w185{{ group.poster_path }}">
@@ -93,6 +97,8 @@
                 <div class="card-badges">
                   {% if not group.tmdb_id %}
                     <span class="badge badge-unmatched">non abbinato</span>
+                  {% elif group.owned_quality %}
+                    <span class="badge badge-owned">✓ ce l'hai in <span class="q">{{ group.owned_quality }}</span></span>
                   {% endif %}
                   {% if group.rating %}
                     <span class="rating {{ 'tmdb' if group.rating_source == 'TMDB' else '' }}">
@@ -105,7 +111,10 @@
 
               <div class="releases">
                 {% for post in group.posts %}
-                  <a class="release {% if not post.quality %}release-unknown{% endif %}"
+                  {# «La tua» è la release con la stessa risoluzione della copia in Plex;
+                     le altre di risoluzione nota prendono il blu, «qui puoi cliccare». #}
+                  <a class="release {% if not post.quality %}release-unknown{% endif %}
+                            {% if group.owned_quality and post.resolution_class %}{{ 'mine' if post.resolution_class == group.owned_quality else 'available' }}{% endif %}"
                      href="{{ post.url }}" target="_blank" rel="noopener">
                     {% if post.quality %}<span class="q">{{ post.quality }}</span>{% endif %}
                     {% if post.languages %}<span>{{ post.languages|langs }}</span>{% endif %}
@@ -145,12 +154,26 @@
 
       <div class="panel-group">
         <h3>Libreria</h3>
-        {% for label in ['Tutti', 'Non in libreria', 'Già in libreria'] %}
-          <span class="panel-opt disabled">
-            <span class="mark">{% if loop.first %}✓{% endif %}</span>{{ label }}
-          </span>
-        {% endfor %}
-        <div class="panel-note">Plex non è ancora collegato.</div>
+        {% if plex.enabled %}
+          {% for key, label in [('', 'Tutti'), ('out', 'Non in libreria'), ('in', 'In libreria')] %}
+            <label class="panel-opt {% if library == key %}on{% endif %}">
+              <input type="radio" name="library" value="{{ key }}" {% if library == key %}checked{% endif %}>
+              <span class="mark">{% if library == key %}✓{% endif %}</span>{{ label }}
+              {% if key %}<span class="n">{{ "{:,}".format(facets.library[key]).replace(",", ".") }}</span>{% endif %}
+            </label>
+          {% endfor %}
+          <label class="panel-opt {% if missing %}on{% endif %}">
+            <input type="checkbox" name="missing" value="1" {% if missing %}checked{% endif %}>
+            <span class="mark">{% if missing %}✓{% endif %}</span>Solo con release che non hai
+          </label>
+        {% else %}
+          {% for label in ['Tutti', 'Non in libreria', 'In libreria'] %}
+            <span class="panel-opt disabled">
+              <span class="mark">{% if loop.first %}✓{% endif %}</span>{{ label }}
+            </span>
+          {% endfor %}
+          <div class="panel-note">Plex non è collegato: servono PLEX_URL e PLEX_TOKEN.</div>
+        {% endif %}
       </div>
 
       <div class="panel-group">

@@ -11,6 +11,7 @@ from werkzeug.serving import WSGIRequestHandler
 
 import config
 import database
+import plex
 import parser
 import ratings
 import scraper
@@ -130,6 +131,16 @@ def v2_shell() -> dict:
     session = session_store.status()
     _, missing = database.get_titles_with_missing_data(per_page=1)
 
+    plex_status = database.get_plex_status() if config.PLEX_ENABLED else None
+    if plex_status and plex_status['films']:
+        plex_line = {'label': f"Plex: {plex_status['films']:,} film · "
+                              f"{_ago(plex_status['synced_at'])}".replace(',', '.'),
+                     'ok': True, 'warn': False}
+    elif plex_status:
+        plex_line = {'label': 'Plex: libreria non ancora letta', 'ok': False, 'warn': True}
+    else:
+        plex_line = {'label': 'Plex non collegato', 'ok': False, 'warn': False}
+
     rated = ratings_stats['matched']
     session_state = session.get('state', 'missing')
     session_label = {
@@ -145,13 +156,17 @@ def v2_shell() -> dict:
             'sections': stats['total_sections'],
             'review': ratings_stats['low_confidence'],
             'missing': missing,
+            'library': plex_status['films'] if plex_status else None,
         },
+        'plex': {'enabled': config.PLEX_ENABLED,
+                 'films': plex_status['films'] if plex_status else 0,
+                 'synced_at': plex_status['synced_at'] if plex_status else None},
         'status_lines': [
             {'label': session_label, 'ok': session_state == 'ok',
              'warn': session_state in ('expiring', 'expired')},
             {'label': f"Import: {_ago(last_import.get('completed_at') or last_import.get('started_at')) if last_import else 'mai'}",
              'ok': bool(last_import), 'warn': False},
-            {'label': 'Plex non collegato', 'ok': False, 'warn': False},
+            plex_line,
         ],
         'ratings_progress': {
             'done': rated,
@@ -173,14 +188,21 @@ def v2_search():
     min_rating = request.args.get('min_rating', type=float)
     sections = [s for s in request.args.getlist('section') if s.strip()]
     qualities = [s for s in request.args.getlist('quality') if s.strip()]
+    library = request.args.get('library', '').strip()
+    missing = request.args.get('missing') == '1'
 
     if search_type not in dict(V2_SEARCH_TYPES):
         search_type = 'contains'
     if min_rating is not None and not 0 < min_rating <= 10:
         min_rating = None
+    if library not in ('in', 'out') or not config.PLEX_ENABLED:
+        library = ''
+    if not config.PLEX_ENABLED:
+        missing = False
 
     searched = bool(q or director)
-    filtered = bool(sections or qualities or min_rating is not None)
+    filtered = bool(sections or qualities or min_rating is not None
+                    or library or missing)
     # With nothing typed the page browses the catalogue newest first, so it
     # opens on what the last import brought in rather than on an empty frame.
     browsing = not searched
@@ -189,7 +211,8 @@ def v2_search():
 
     common = dict(query=q, search_type=search_type, director=director or None,
                   min_rating=min_rating, sections=sections, qualities=qualities,
-                  allow_empty=browsing)
+                  allow_empty=browsing, library=library or None,
+                  missing_only=missing)
     groups, total = database.search_titles_grouped(
         page=page, per_page=V2_PER_PAGE, sort=sort, **common)
 
@@ -206,6 +229,10 @@ def v2_search():
     params += [('quality', s) for s in qualities]
     if min_rating is not None:
         params.append(('min_rating', min_rating))
+    if library:
+        params.append(('library', library))
+    if missing:
+        params.append(('missing', '1'))
 
     def url_without(name, value=None):
         rest = [(k, v) for k, v in params
@@ -220,6 +247,12 @@ def v2_search():
     if min_rating is not None:
         chips.append({'label': f'voto ≥ {min_rating:g}',
                       'remove_url': url_without('min_rating')})
+    if library:
+        chips.append({'label': 'in libreria' if library == 'in' else 'non in libreria',
+                      'remove_url': url_without('library')})
+    if missing:
+        chips.append({'label': 'solo release che non hai',
+                      'remove_url': url_without('missing')})
 
     pages = max((total + V2_PER_PAGE - 1) // V2_PER_PAGE, 1)
 
@@ -229,6 +262,7 @@ def v2_search():
         min_rating=min_rating, page=page, pages=pages, groups=groups,
         total=total, total_posts=total_posts, browsing=browsing,
         sections=sections, qualities=qualities, facets=facets,
+        library=library, missing=missing,
         active_chips=chips,
         search_types=V2_SEARCH_TYPES, sorts=V2_SORTS,
         search_type_label=dict(V2_SEARCH_TYPES)[search_type],
@@ -823,6 +857,27 @@ def ratings_page():
         article_count=(database.count_low_confidence_with_trailing_article()
                        if status == 'low_confidence' else 0),
         **v2_shell())
+
+
+@app.route('/api/plex/status')
+def api_plex_status():
+    """Whether Plex is configured and how much of the library is stored."""
+    status = database.get_plex_status()
+    return jsonify({'enabled': config.PLEX_ENABLED, 'url': config.PLEX_URL, **status})
+
+
+@app.route('/api/plex/refresh', methods=['POST'])
+def api_plex_refresh():
+    """Re-read the Plex library now. A few requests, a few seconds."""
+    if not config.PLEX_ENABLED:
+        return jsonify({'error': 'PLEX_URL e PLEX_TOKEN non configurati'}), 400
+    try:
+        result = plex.refresh()
+    except Exception as e:
+        web_logger.error(f"Errore leggendo la libreria Plex: {e}", exc_info=True)
+        return jsonify({'error': f'Plex non risponde: {e}'}), 502
+    database.clear_facet_cache()
+    return jsonify({'success': True, **result, **database.get_plex_status()})
 
 
 @app.route('/api/ratings/status')
