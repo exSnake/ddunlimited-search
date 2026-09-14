@@ -105,9 +105,11 @@
 
               <div class="releases">
                 {% for post in group.posts %}
-                  <a class="release" href="{{ post.url }}" target="_blank" rel="noopener">
-                    <span class="q">{{ post.quality or '?' }}</span>
+                  <a class="release {% if not post.quality %}release-unknown{% endif %}"
+                     href="{{ post.url }}" target="_blank" rel="noopener">
+                    {% if post.quality %}<span class="q">{{ post.quality }}</span>{% endif %}
                     {% if post.languages %}<span>{{ post.languages|langs }}</span>{% endif %}
+                    {% if not post.quality and not post.languages %}<span>senza dettagli</span>{% endif %}
                   </a>
                 {% endfor %}
               </div>

@@ -186,6 +186,28 @@ def _normalize_stored_qualities(cursor) -> int:
     return changed
 
 
+def _fill_quality_from_post_details(cursor) -> int:
+    """Read a quality out of the stored post details where none was saved.
+
+    The parser learned new spellings after most posts were scraped, and old
+    topics are never downloaded again, so the stored h4 text is the only
+    place left to look. Idempotent: rows that still say nothing stay NULL.
+    """
+    import parser
+
+    cursor.execute(
+        "SELECT id, raw_info FROM titles "
+        "WHERE (quality IS NULL OR quality = '') AND raw_info IS NOT NULL AND raw_info != ''"
+    )
+    filled = 0
+    for row in cursor.fetchall():
+        quality = parser.extract_quality(row['raw_info'])
+        if quality:
+            cursor.execute("UPDATE titles SET quality = ? WHERE id = ?", (quality, row['id']))
+            filled += cursor.rowcount
+    return filled
+
+
 def init_db():
     """Initialize the database schema."""
     # Create data directory if it doesn't exist
@@ -310,6 +332,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_status ON title_ratings(match_status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rating_imdb_id ON title_ratings(imdb_id)")
         _normalize_stored_qualities(cursor)
+        _fill_quality_from_post_details(cursor)
         _reextract_missing_director_year(cursor)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_rating_score
