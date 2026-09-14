@@ -190,6 +190,10 @@
                 });
         }
 
+        function thousands(n) {
+            return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+
         function loadPlex() {
             fetch('/api/plex/status')
                 .then(response => response.json())
@@ -211,8 +215,8 @@
                         return;
                     }
                     dot.className = 'dot ok';
-                    summary.textContent = `${data.films.toLocaleString('it-IT')} film con id TMDB`;
-                    detail.textContent = `${data.in_catalogue.toLocaleString('it-IT')} anche sul forum · letta il ${formatDate(data.synced_at)} · ${data.url}`;
+                    summary.textContent = `${thousands(data.films)} film con id TMDB`;
+                    detail.textContent = `${thousands(data.in_catalogue)} anche sul forum · letta il ${formatDate(data.synced_at)} · ${data.url}`;
                 })
                 .catch(error => {
                     showStatus('plex-status', 'error', `Errore di connessione: ${error.message}`);
@@ -229,7 +233,7 @@
                     btn.disabled = false;
                     if (data.error) { showStatus('plex-status', 'error', data.error); return; }
                     showStatus('plex-status', 'success',
-                        `Letti ${data.films} film, ${data.with_tmdb} con id TMDB.`);
+                        `Letti ${thousands(data.films)} film, ${thousands(data.with_tmdb)} con id TMDB.`);
                     loadPlex();
                 })
                 .catch(error => {
