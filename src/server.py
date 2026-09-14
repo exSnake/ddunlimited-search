@@ -383,14 +383,10 @@ def sections_page():
 
 @app.route('/sections/<section>')
 def section_detail_page(section):
-    """Render the section detail page."""
-    # Verify section exists
-    all_sections = database.get_all_sections()
-    if section not in all_sections:
+    """The old per-section page: the search filtered by section replaced it."""
+    if section not in database.get_all_sections():
         return "Section not found", 404
-    
-    stats = database.get_section_stats(section)
-    return render_template('section_detail.html', section=section, stats=stats)
+    return redirect(url_for('v2_search', section=section))
 
 
 @app.route('/sections/missing-data')
@@ -725,65 +721,6 @@ def api_import_status():
     # we'll keep it for a while but mark it as "shown" to avoid flickering
     # The frontend will handle hiding it after a timeout
     return jsonify(status)
-
-
-@app.route('/api/sections/<section>')
-def api_section_titles(section):
-    """
-    Get titles for a specific section with optional filters.
-    
-    Query parameters:
-        page: Page number (default: 1)
-        per_page: Results per page (default: 50)
-        year: Filter by year (optional)
-        first_letter: Filter by first letter (optional)
-        quality: Filter by quality/resolution (optional)
-    """
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 50, type=int)
-    year = request.args.get('year', type=int)
-    first_letter = request.args.get('first_letter', '').strip() or None
-    quality = request.args.get('quality', '').strip() or None
-    
-    # Validate parameters
-    if page < 1:
-        page = 1
-    if per_page < 1 or per_page > 100:
-        per_page = 50
-    
-    # Perform query
-    results, total, filters_info = database.get_section_titles(
-        section=section,
-        page=page,
-        per_page=per_page,
-        year=year,
-        first_letter=first_letter,
-        quality=quality
-    )
-    
-    # Calculate pagination info
-    total_pages = (total + per_page - 1) // per_page
-    
-    return jsonify({
-        'section': section,
-        'results': results,
-        'pagination': {
-            'page': page,
-            'per_page': per_page,
-            'total': total,
-            'total_pages': total_pages,
-            'has_next': page < total_pages,
-            'has_prev': page > 1,
-        },
-        'filters': {
-            'year': year,
-            'first_letter': first_letter,
-            'quality': quality,
-            'available_years': filters_info['available_years'],
-            'available_letters': filters_info['available_letters'],
-            'available_qualities': filters_info['available_qualities']
-        }
-    })
 
 
 @app.route('/api/missing-data')
