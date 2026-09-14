@@ -219,10 +219,13 @@
     start('backfill', '/api/ratings/backfill-directors',
           {status: '{{ status }}', limit: 400});
 
-    // Al caricamento: se un lavoro e' gia' in corso, riprendilo.
+    // Al caricamento: un lavoro in corso si riprende, l'esito dell'ultimo si mostra.
     fetch('/api/ratings/status')
       .then(function (r) { return r.json(); })
-      .then(function (s) { if (s.running) watch(); });
+      .then(function (s) {
+        if (s.running) watch();
+        else if (s.message) finished(s);
+      });
   })();
 </script>
 {% endblock %}

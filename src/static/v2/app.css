@@ -18,6 +18,9 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
+/* Un componente con display proprio vincerebbe sull'attributo hidden. */
+[hidden] { display: none !important; }
+
 /* Il vetro si spegne da qui: serve a misurare il costo di backdrop-filter
    su una pagina piena di locandine. */
 body.no-glass * { backdrop-filter: none !important; }
