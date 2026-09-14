@@ -112,8 +112,8 @@ QUALITY_PATTERNS = [
     r'\b(720p|720i)\b',
     r'\b(HDTV)\b',
     r'\b(WEB-DL|WEBDL|WEBRip|WEB)\b',
-    r'\b(BluRay|BDRip|BRRip)\b',
-    r'\b(DVDRip|DVD)\b',
+    r'\b(BluRay|Blu-Ray|BDRip|BRRip)\b',
+    r'\b(DVDRip|DVD-?9|DVD-?5|DVD)\b',
     r'\b(HDCAM|CAM|TS|TELESYNC)\b',
 ]
 
@@ -126,8 +126,8 @@ QUALITY_CANONICAL = {
     '720P': '720p', '720I': '720i',
     'HDTV': 'HDTV',
     'WEB': 'WEB', 'WEB-DL': 'WEB', 'WEBDL': 'WEB', 'WEBRIP': 'WEB',
-    'BLURAY': 'BluRay', 'BDRIP': 'BluRay', 'BRRIP': 'BluRay',
-    'DVD': 'DVD', 'DVDRIP': 'DVD',
+    'BLURAY': 'BluRay', 'BLU-RAY': 'BluRay', 'BDRIP': 'BluRay', 'BRRIP': 'BluRay',
+    'DVD': 'DVD', 'DVDRIP': 'DVD', 'DVD9': 'DVD', 'DVD-9': 'DVD', 'DVD5': 'DVD', 'DVD-5': 'DVD',
     'SD': 'SD',
     'CAM': 'CAM', 'HDCAM': 'CAM', 'TS': 'TS', 'TELESYNC': 'TS',
 }

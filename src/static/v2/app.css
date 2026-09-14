@@ -795,6 +795,8 @@ body.is-searching .control:focus { border-color: var(--color-primary); color: va
   border-color: var(--color-primary);
 }
 .release .q { color: var(--color-text); font-weight: 600; }
+/* Il post non dice la qualità: lo stato sconosciuto è uno stato, non un «?». */
+.release-unknown { border-style: dashed; }
 
 .pager {
   display: flex;
