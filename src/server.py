@@ -190,6 +190,10 @@ def v2_search():
     qualities = [s for s in request.args.getlist('quality') if s.strip()]
     library = request.args.get('library', '').strip()
     missing = request.args.get('missing') == '1'
+    year_from = _year(request.args.get('year_from'))
+    year_to = _year(request.args.get('year_to'))
+    if year_from and year_to and year_from > year_to:
+        year_from, year_to = year_to, year_from
 
     if search_type not in dict(V2_SEARCH_TYPES):
         search_type = 'contains'
@@ -202,7 +206,7 @@ def v2_search():
 
     searched = bool(q or director)
     filtered = bool(sections or qualities or min_rating is not None
-                    or library or missing)
+                    or library or missing or year_from or year_to)
     # With nothing typed the page browses the catalogue newest first, so it
     # opens on what the last import brought in rather than on an empty frame.
     browsing = not searched
@@ -212,7 +216,7 @@ def v2_search():
     common = dict(query=q, search_type=search_type, director=director or None,
                   min_rating=min_rating, sections=sections, qualities=qualities,
                   allow_empty=browsing, library=library or None,
-                  missing_only=missing)
+                  missing_only=missing, year_from=year_from, year_to=year_to)
     groups, total = database.search_titles_grouped(
         page=page, per_page=V2_PER_PAGE, sort=sort, **common)
 
@@ -233,6 +237,10 @@ def v2_search():
         params.append(('library', library))
     if missing:
         params.append(('missing', '1'))
+    if year_from:
+        params.append(('year_from', year_from))
+    if year_to:
+        params.append(('year_to', year_to))
 
     def url_without(name, value=None):
         rest = [(k, v) for k, v in params
@@ -253,6 +261,18 @@ def v2_search():
     if missing:
         chips.append({'label': 'solo release che non hai',
                       'remove_url': url_without('missing')})
+    if year_from or year_to:
+        if year_from and year_to and year_from == year_to:
+            label = f'anno {year_from}'
+        elif year_from and year_to:
+            label = f'{year_from}–{year_to}'
+        elif year_from:
+            label = f'dal {year_from}'
+        else:
+            label = f'fino al {year_to}'
+        rest = [(k, v) for k, v in params if k not in ('year_from', 'year_to')]
+        chips.append({'label': label,
+                      'remove_url': url_for('v2_search', **_multi(rest))})
 
     pages = max((total + V2_PER_PAGE - 1) // V2_PER_PAGE, 1)
 
@@ -263,6 +283,7 @@ def v2_search():
         total=total, total_posts=total_posts, browsing=browsing,
         sections=sections, qualities=qualities, facets=facets,
         library=library, missing=missing,
+        year_from=year_from, year_to=year_to,
         active_chips=chips,
         search_types=V2_SEARCH_TYPES, sorts=V2_SORTS,
         search_type_label=dict(V2_SEARCH_TYPES)[search_type],
@@ -273,6 +294,15 @@ def v2_search():
             'v2_search', **_multi(params + [('page', n)])),
         **v2_shell(),
     )
+
+
+def _year(value) -> int | None:
+    """A plausible film year, or None for anything else."""
+    try:
+        year = int(str(value or '').strip())
+    except ValueError:
+        return None
+    return year if 1880 <= year <= 2100 else None
 
 
 def _cycle(options, current):

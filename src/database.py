@@ -499,6 +499,8 @@ def _build_search_filter(
     allow_empty: bool = False,
     library: Optional[str] = None,
     missing_only: bool = False,
+    year_from: Optional[int] = None,
+    year_to: Optional[int] = None,
 ) -> tuple[str, list]:
     """Build the shared FROM/WHERE clause for the search queries.
 
@@ -576,6 +578,13 @@ def _build_search_filter(
     if missing_only:
         base_query += (f" AND (p.tmdb_id IS NULL OR ({RESOLUTION_SQL} IS NOT NULL"
                        f" AND {RESOLUTION_SQL} != p.owned_quality))")
+
+    if year_from is not None:
+        base_query += f" AND {YEAR_SQL} >= ?"
+        params.append(year_from)
+    if year_to is not None:
+        base_query += f" AND {YEAR_SQL} <= ?"
+        params.append(year_to)
 
     return base_query, params
 
@@ -688,6 +697,8 @@ def search_titles_grouped(
     allow_empty: bool = False,
     library: Optional[str] = None,
     missing_only: bool = False,
+    year_from: Optional[int] = None,
+    year_to: Optional[int] = None,
 ) -> tuple[list[dict], int]:
     """Search titles grouped by film rather than by post.
 
@@ -702,7 +713,7 @@ def search_titles_grouped(
     """
     base_query, params = _build_search_filter(
         query, section, search_type, director, include_deleted, min_rating,
-        sections, qualities, allow_empty, library, missing_only
+        sections, qualities, allow_empty, library, missing_only, year_from, year_to
     )
 
     if "1=0" in base_query:
@@ -799,6 +810,8 @@ def get_search_facets(
     allow_empty: bool = False,
     library: Optional[str] = None,
     missing_only: bool = False,
+    year_from: Optional[int] = None,
+    year_to: Optional[int] = None,
 ) -> dict:
     """Count films per section and per quality for the current search.
 
@@ -811,7 +824,8 @@ def get_search_facets(
         kw.update(overrides)
         base_query, params = _build_search_filter(
             query, section, search_type, director, include_deleted, min_rating,
-            kw['sections'], kw['qualities'], allow_empty, kw['library'], missing_only
+            kw['sections'], kw['qualities'], allow_empty, kw['library'], missing_only,
+            year_from, year_to
         )
         if "1=0" in base_query:
             return {}
@@ -847,7 +861,7 @@ def get_search_facets(
 
     base_query, params = _build_search_filter(
         query, section, search_type, director, include_deleted, min_rating,
-        sections, qualities, allow_empty, library, missing_only
+        sections, qualities, allow_empty, library, missing_only, year_from, year_to
     )
     total_posts = 0
     if "1=0" not in base_query:
@@ -1237,6 +1251,10 @@ RATING_COLUMNS = """
 """
 
 PLEX_JOIN = "LEFT JOIN plex_items p ON p.tmdb_id = r.tmdb_id"
+
+# The year the card shows: TMDB's once matched, the one parsed from the title
+# otherwise. The filter must agree with what is on screen.
+YEAR_SQL = "COALESCE(r.matched_year, titles.year)"
 
 PLEX_COLUMNS = "p.owned_quality, p.owned_resolution"
 

@@ -96,11 +96,13 @@
     function panelParams() {
       var p = params(), panel = document.querySelector('#panel-region form');
       if (!panel) return p;
-      ['section', 'quality', 'min_rating', 'library', 'missing'].forEach(function (k) { p.delete(k); });
+      ['section', 'quality', 'min_rating', 'library', 'missing', 'year_from', 'year_to']
+        .forEach(function (k) { p.delete(k); });
       new FormData(panel).forEach(function (v, k) {
         if (k === 'section' || k === 'quality') p.append(k, v);
         else if (k === 'min_rating' && +v > 0) p.set(k, v);
         else if ((k === 'library' || k === 'missing') && v) p.set(k, v);
+        else if ((k === 'year_from' || k === 'year_to') && /^\d{4}$/.test(v)) p.set(k, v);
       });
       return p;
     }
@@ -116,10 +118,19 @@
           .then(function (r) { return r.text(); })
           .then(function (html) {
             var doc = new DOMParser().parseFromString(html, 'text/html');
+            var typing = document.activeElement && document.activeElement.closest('#panel-region')
+              ? document.activeElement.name : null;
             REGIONS.forEach(function (id) {
               var next = doc.getElementById(id), now = document.getElementById(id);
               if (next && now) now.replaceWith(next);
             });
+            // Il pannello si è appena sostituito: chi stava scrivendo un anno
+            // ritrova la casella e il cursore dove li aveva lasciati.
+            var again = typing && document.querySelector('#panel-region [name="' + typing + '"]');
+            if (again && again.type !== 'checkbox' && again.type !== 'radio') {
+              again.focus();
+              if (again.setSelectionRange && again.type === 'text') again.setSelectionRange(again.value.length, again.value.length);
+            }
             history.replaceState(null, '', url);
             document.body.classList.remove('is-searching');
           })
@@ -155,6 +166,13 @@
     document.addEventListener('change', function (e) {
       if (!e.target.closest('#panel-region form')) return;
       swap(panelParams(), e.target.type === 'range' ? 400 : 0);
+    });
+    // Gli anni si scrivono cifra per cifra: la richiesta parte a quattro cifre,
+    // o quando ci si ferma, non a ogni tasto.
+    document.addEventListener('input', function (e) {
+      if (!e.target.matches('#panel-region .year-range input')) return;
+      var v = e.target.value;
+      if (v === '' || /^\d{4}$/.test(v)) swap(panelParams(), 500);
     });
 
     // ⌘K / Ctrl+K riporta il fuoco nella barra da qualunque punto: è l'azione
